@@ -40,6 +40,7 @@ struct Prepared {
     at: Instant,
     target: pb::prepare_acp_request::Target,
     interactive: bool,
+    callbacks_only: bool,
 }
 #[derive(Default)]
 struct State {
@@ -49,6 +50,7 @@ struct State {
 struct Connection {
     target: pb::prepare_acp_request::Target,
     interactive: bool,
+    callbacks_only: bool,
     bindings: Mutex<HashMap<String, Binding>>,
     submitted: tokio::sync::Notify,
     capabilities: Mutex<serde_json::Value>,
@@ -175,6 +177,7 @@ impl<B: Bas + 'static> AcpTransport for Gateway<B> {
                 at: Instant::now(),
                 target,
                 interactive: request.interactive,
+                callbacks_only: request.callbacks_only,
             },
         );
         Ok(Response::new(pb::PreparedAcpConnection { id }))
@@ -203,6 +206,7 @@ impl<B: Bas + 'static> AcpTransport for Gateway<B> {
             let connection = Arc::new(Connection {
                 target: prepared.target,
                 interactive: prepared.interactive,
+                callbacks_only: prepared.callbacks_only,
                 bindings: Mutex::default(),
                 submitted: tokio::sync::Notify::new(),
                 capabilities: Mutex::new(serde_json::Value::Null),

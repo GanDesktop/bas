@@ -41,6 +41,7 @@ async fn connect(client: &Client, session: &crate::session::Session, interactive
     let prepared = prepare(
         client.channel(),
         pb::PrepareAcpRequest {
+            callbacks_only: false,
             target: Some(pb::prepare_acp_request::Target::Session(
                 session.id().to_string(),
             )),
@@ -100,7 +101,7 @@ async fn sdk_prompt_survives_disconnect_and_reconnect_without_redispatch() {
         drop(link);
         let mut journal = server
             .client
-            .attach(pb::AttachRequest {
+            .observe_acp(pb::AttachRequest {
                 session: session.id().to_string(),
                 cursor: Some(receipt.cursor.raw()),
                 replay: 0,
@@ -114,12 +115,13 @@ async fn sdk_prompt_survives_disconnect_and_reconnect_without_redispatch() {
                 .await
                 .expect("journal event")
                 .expect("running");
-            if let Some(pb::event::Kind::TurnFinished(finished)) = event.kind {
-                assert_eq!(finished.turn, submission.turn.to_string());
-                assert!(matches!(
-                    finished.outcome,
-                    Some(pb::turn_finished::Outcome::Response(_))
-                ));
+            let message: serde_json::Value =
+                serde_json::from_slice(&event.json).expect("protocol JSON");
+            if message.get("result").is_some() {
+                assert_eq!(
+                    event.turn.as_deref(),
+                    Some(submission.turn.to_string().as_str())
+                );
                 break;
             }
         }
@@ -183,6 +185,7 @@ async fn interactive(
     let prepared = prepare(
         client.channel(),
         pb::PrepareAcpRequest {
+            callbacks_only: false,
             target: Some(pb::prepare_acp_request::Target::Session(
                 session.id().to_string(),
             )),
@@ -262,4 +265,135 @@ async fn interactive_subscribers_share_requests_without_owning_the_agent() {
         assert_eq!(answer.await.expect("task").expect("answer")["action"], "accept");
         registry.shutdown().await;
     }).await.expect("multiplexing deadline");
+}
+
+#[tokio::test]
+async fn management_and_protocol_observers_are_disjoint() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let registry = registry(1000);
+        let session = create(&registry).await;
+        let mut server = serve(registry.clone()).await;
+        let request = pb::AttachRequest {
+            session: session.id().to_string(),
+            cursor: Some(session.meta().revision.raw()),
+            replay: 0,
+        };
+        let mut management = server
+            .client
+            .attach(request.clone())
+            .await
+            .expect("management")
+            .into_inner();
+        let mut first = server
+            .client
+            .observe_acp(request.clone())
+            .await
+            .expect("first observer")
+            .into_inner();
+        let mut second = server
+            .client
+            .observe_acp(request)
+            .await
+            .expect("second observer")
+            .into_inner();
+        let submission = PromptSubmission::new(acp::PromptRequest::new(
+            session.id().to_string(),
+            vec!["first block".into(), "second block".into()],
+        ));
+        let PromptSubmissionOutcome::Accepted(receipt) = server
+            .client
+            .submit_prompt(&submission)
+            .await
+            .expect("submit")
+        else {
+            panic!("accepted")
+        };
+        let mut messages = Vec::new();
+        loop {
+            let a = first.message().await.expect("first stream").expect("open");
+            let b = second
+                .message()
+                .await
+                .expect("second stream")
+                .expect("open");
+            assert_eq!(
+                a, b,
+                "observers receive the same protocol message and position"
+            );
+            let message: serde_json::Value = serde_json::from_slice(&a.json).expect("JSON-RPC");
+            assert_eq!(message["jsonrpc"], "2.0");
+            assert!(message.get("kind").is_none());
+            let done = message.get("result").is_some();
+            messages.push((a, message));
+            if done {
+                break;
+            }
+        }
+        let (input, message) = &messages[0];
+        assert_eq!(message["method"], "session/prompt");
+        assert_eq!(input.start, receipt.cursor.raw());
+        assert_eq!(input.history_events().expect("history projection").len(), 3);
+        assert_eq!(message["id"], messages.last().expect("response").1["id"]);
+        assert_eq!(
+            message["params"],
+            serde_json::to_value(&submission.request).expect("request")
+        );
+        // A command/callback connection must not replay this conversation again.
+        let prepared = prepare(
+            server.client.channel(),
+            pb::PrepareAcpRequest {
+                target: Some(pb::prepare_acp_request::Target::Session(
+                    session.id().to_string(),
+                )),
+                interactive: true,
+                callbacks_only: true,
+            },
+        )
+        .await
+        .expect("callback preparation");
+        let (callback, mut incoming) = Link::open(prepared).await.expect("callback link");
+        callback
+            .peer
+            .send_request(acp::InitializeRequest::new(
+                sdk::schema::ProtocolVersion::V1,
+            ))
+            .block_task()
+            .await
+            .expect("callback initialize");
+        callback
+            .peer
+            .send_request(acp::LoadSessionRequest::new(
+                session.id().to_string(),
+                session.meta().cwd.expect("cwd"),
+            ))
+            .block_task()
+            .await
+            .expect("callback load without replay");
+        assert!(
+            incoming.try_recv().is_err(),
+            "history is read only through the history/observation paths"
+        );
+        session.set_title("BAS title").await.expect("rename");
+        loop {
+            let event = management
+                .message()
+                .await
+                .expect("management event")
+                .expect("open");
+            let event = bas::model::Event::try_from(event).expect("management model");
+            assert!(!matches!(
+                event.kind,
+                bas::model::EventKind::Acp(_)
+                    | bas::model::EventKind::Subagent(_)
+                    | bas::model::EventKind::TurnStarted { .. }
+                    | bas::model::EventKind::TurnFinished { .. }
+            ));
+            if matches!(event.kind, bas::model::EventKind::TitleChanged { .. }) {
+                break;
+            }
+        }
+        registry.shutdown().await;
+    })
+    .await
+    .expect("stream separation deadline");
 }

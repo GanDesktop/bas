@@ -13,6 +13,8 @@ use super::pb;
 /// Failure converting between the domain model and protobuf wire values.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("invalid ACP observation or history position")]
+    InvalidObservation,
     #[error("unknown {field} {value:?}")]
     Unknown { field: &'static str, value: String },
     #[error("the event carries no kind")]
@@ -484,6 +486,11 @@ impl From<&model::Event> for pb::Event {
                     .collect(),
                 acp: Some(config.into()),
             }),
+            model::EventKind::ActivityChanged { turn } => {
+                Kind::ActivityChanged(pb::ActivityChanged {
+                    turn: turn.map(|turn| turn.to_string()),
+                })
+            }
             model::EventKind::StatusChanged { status } => Kind::StatusChanged(pb::StatusChanged {
                 status: pb::SessionStatus::from(*status) as i32,
             }),
@@ -495,6 +502,15 @@ impl From<&model::Event> for pb::Event {
             session: event.session.to_string(),
             cursor: event.cursor.raw(),
             at: event.at.millis(),
+            historical_only: event.historical_only,
+            protocol: event.protocol.as_ref().map(|record| pb::AcpObservation {
+                session: event.session.to_string(),
+                cursor: event.cursor.raw(),
+                at: event.at.millis(),
+                json: serde_json::to_vec(&record.message).expect("protocol JSON"),
+                turn: record.turn.map(|turn| turn.to_string()),
+                start: record.start.raw(),
+            }),
             kind: Some(kind),
         }
     }
@@ -508,6 +524,17 @@ impl TryFrom<pb::Event> for model::Event {
             session: event.session.parse()?,
             cursor: model::Cursor::from_raw(event.cursor),
             at: model::Timestamp::from_millis(event.at),
+            historical_only: event.historical_only,
+            protocol: event
+                .protocol
+                .map(|record| -> Result<_, Error> {
+                    Ok(model::ProtocolRecord {
+                        message: serde_json::from_slice(&record.json)?,
+                        start: model::Cursor::from_raw(record.start),
+                        turn: record.turn.map(|turn| turn.parse()).transpose()?,
+                    })
+                })
+                .transpose()?,
             kind: match event.kind.ok_or(Error::MissingEventKind)? {
                 Kind::AcpUpdate(payload) => model::EventKind::Acp(payload.decode()?),
                 Kind::TurnStarted(value) => model::EventKind::TurnStarted {
@@ -569,6 +596,9 @@ impl TryFrom<pb::Event> for model::Event {
                         .collect(),
                     config: value.acp.ok_or(Error::MissingAcpPayload)?.decode()?,
                 },
+                Kind::ActivityChanged(value) => model::EventKind::ActivityChanged {
+                    turn: value.turn.map(|turn| turn.parse()).transpose()?,
+                },
                 Kind::StatusChanged(value) => model::EventKind::StatusChanged {
                     status: value.status.try_into()?,
                 },
@@ -621,5 +651,53 @@ impl TryFrom<pb::Workspace> for model::Workspace {
             created_at: model::Timestamp::from_millis(workspace.created_at),
             updated_at: model::Timestamp::from_millis(workspace.updated_at),
         })
+    }
+}
+
+impl pb::ManagementEvent {
+    /// Project a journal entry into the application-state stream.
+    pub fn from_event(event: &model::Event) -> Option<Self> {
+        use pb::{event::Kind as History, management_event::Kind};
+        let event = pb::Event::from(&event.management()?);
+        let kind = match event.kind? {
+            History::ActivityChanged(value) => Kind::ActivityChanged(value),
+            History::TitleChanged(value) => Kind::TitleChanged(value),
+            History::StatusChanged(value) => Kind::StatusChanged(value),
+            History::Failed(value) => Kind::Failed(value),
+            History::ArchiveChanged(value) => Kind::ArchiveChanged(value),
+            History::WorkspaceChanged(value) => Kind::WorkspaceChanged(value),
+            History::TurnInterrupted(value) => Kind::TurnInterrupted(value),
+            _ => return None,
+        };
+        Some(Self {
+            session: event.session,
+            cursor: event.cursor,
+            at: event.at,
+            kind: Some(kind),
+        })
+    }
+}
+
+impl TryFrom<pb::ManagementEvent> for model::Event {
+    type Error = Error;
+    fn try_from(event: pb::ManagementEvent) -> Result<Self, Self::Error> {
+        use pb::{event::Kind as History, management_event::Kind};
+        let kind = match event.kind.ok_or(Error::MissingEventKind)? {
+            Kind::ActivityChanged(value) => History::ActivityChanged(value),
+            Kind::TitleChanged(value) => History::TitleChanged(value),
+            Kind::StatusChanged(value) => History::StatusChanged(value),
+            Kind::Failed(value) => History::Failed(value),
+            Kind::ArchiveChanged(value) => History::ArchiveChanged(value),
+            Kind::WorkspaceChanged(value) => History::WorkspaceChanged(value),
+            Kind::TurnInterrupted(value) => History::TurnInterrupted(value),
+        };
+        pb::Event {
+            session: event.session,
+            cursor: event.cursor,
+            at: event.at,
+            kind: Some(kind),
+            ..Default::default()
+        }
+        .try_into()
     }
 }

@@ -1049,7 +1049,8 @@ impl Session {
         kinds: impl IntoIterator<Item = EventKind>,
         meta: &mut SessionMeta,
     ) -> Result<(), SessionError> {
-        self.publish_submission_locked(kinds, meta, None).await
+        self.publish_submission_locked(kinds, meta, None, None)
+            .await
     }
 
     async fn publish_submission_locked(
@@ -1057,6 +1058,7 @@ impl Session {
         kinds: impl IntoIterator<Item = EventKind>,
         meta: &mut SessionMeta,
         acceptance: Option<storage::PromptAcceptance>,
+        protocol: Option<bas::model::ProtocolRecord>,
     ) -> Result<(), SessionError> {
         let (events, storage) = {
             let state = self.lock();
@@ -1064,6 +1066,9 @@ impl Session {
             let mut events = Vec::new();
             for kind in kinds {
                 let mut event = Event::new(meta.id, Cursor::START, kind);
+                if acceptance.is_some() {
+                    event.historical_only = true;
+                }
                 if event.is_transient() {
                     if let Some(sender) = &state.events {
                         let _ = sender.send(event);
@@ -1073,8 +1078,16 @@ impl Session {
                 event.cursor = events
                     .last()
                     .map_or(state.cursor.next(), |event: &Event| event.cursor.next());
+                if let Some(record) = &mut event.protocol {
+                    record.start = event.cursor;
+                }
                 meta.apply_event(&event);
                 events.push(event);
+            }
+            if let Some(record) = protocol {
+                if let Some(last) = events.last_mut() {
+                    last.protocol = Some(record);
+                }
             }
             (events, state.storage.clone())
         };
@@ -1140,8 +1153,33 @@ impl Session {
     async fn finish_locked(&self, result: PromptResult) -> Result<(), SessionError> {
         let active = self.lock().active;
         if let Some(turn) = active {
-            self.publish_locked([EventKind::TurnFinished { turn, result }])
-                .await?;
+            let receipt = self
+                .acceptance_locked(turn)
+                .await?
+                .map(|value| value.receipt);
+            let id = receipt
+                .and_then(|value| value.request_id)
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| turn.to_string());
+            let mut message = serde_json::json!({"jsonrpc":"2.0", "id":id});
+            match &result {
+                Ok(response) => {
+                    message["result"] = serde_json::to_value(response).expect("ACP response")
+                }
+                Err(error) => message["error"] = serde_json::to_value(error).expect("ACP error"),
+            }
+            let record = bas::model::ProtocolRecord {
+                message,
+                start: self.lock().cursor.next(),
+                turn: Some(turn),
+            };
+            self.publish_submission_locked(
+                [EventKind::TurnFinished { turn, result }],
+                &mut self.meta(),
+                None,
+                Some(record),
+            )
+            .await?;
             self.lock().active = None;
         }
         Ok(())

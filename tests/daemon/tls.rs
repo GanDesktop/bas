@@ -264,7 +264,7 @@ async fn mtls_handshakes_rpc_stream_and_mixed_listeners() {
     let mut stopped = false;
     tokio::time::timeout(TIMEOUT, async {
         while let Some(event) = stream.message().await.expect("stream drains") {
-            if matches!(event.kind, Some(pb::event::Kind::StatusChanged(pb::StatusChanged { status }))
+            if matches!(event.kind, Some(pb::management_event::Kind::StatusChanged(pb::StatusChanged { status }))
                 if status == pb::SessionStatus::Stopped as i32) {
                 stopped = true;
             }

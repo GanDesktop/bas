@@ -2,6 +2,8 @@
 
 Agreed implementation contract, 2026-11-06.
 
+The [event-stream separation contract](event-streams.md) defines the distinct ACP and BAS management streams.
+
 BAS is the persistent ACP client of each Agent. Desktop and remote BAS frontends are independent producers and observers of that client's session stream. An Agent session does not have an exclusive frontend controller.
 
 ## Input and observation

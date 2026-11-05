@@ -16,20 +16,41 @@ pub(super) async fn run(
     cursor: Option<u64>,
     replay: usize,
 ) -> Result<()> {
-    let mut events = client
-        .attach(pb::AttachRequest {
-            session: session.to_owned(),
-            cursor,
-            replay: u32::try_from(replay).unwrap_or(u32::MAX),
-        })
+    let request = pb::AttachRequest {
+        session: session.to_owned(),
+        cursor,
+        replay: u32::try_from(replay).unwrap_or(u32::MAX),
+    };
+    let mut protocol = client
+        .observe_acp(request.clone())
         .await
-        .context("attach failed")?
+        .context("ACP observation failed")?
         .into_inner();
-
+    let mut management = client
+        .attach(request)
+        .await
+        .context("management subscription failed")?
+        .into_inner();
     let mut timeline = render::Timeline::default();
-    while let Some(event) = events.next().await {
-        timeline.event(&event.context("the event stream failed")?)?;
+    let mut protocol_open = true;
+    let mut management_open = true;
+    loop {
+        if !protocol_open && !management_open {
+            break;
+        }
+        tokio::select! {
+            event = protocol.next(), if protocol_open => {
+                let Some(event) = event else { protocol_open = false; continue };
+                for event in event.context("ACP observation failed")?.history_events()? {
+                    timeline.event(&pb::Event::from(&event))?;
+                }
+            }
+            event = management.next(), if management_open => {
+                let Some(event) = event else { management_open = false; continue };
+                let event = bas::model::Event::try_from(event.context("management subscription failed")?)?;
+                timeline.event(&pb::Event::from(&event))?;
+            }
+        }
     }
-
     timeline.finish()
 }

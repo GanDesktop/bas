@@ -54,6 +54,9 @@ pub enum EventKind {
         #[serde(default)]
         subagents: super::Subagents,
     },
+    ActivityChanged {
+        turn: Option<TurnId>,
+    },
     StatusChanged {
         status: super::SessionStatus,
     },
@@ -89,6 +92,10 @@ pub struct Event {
     pub session: SessionId,
     pub cursor: Cursor,
     pub at: Timestamp,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<ProtocolRecord>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub historical_only: bool,
     #[serde(flatten)]
     pub kind: EventKind,
 }
@@ -107,7 +114,59 @@ impl Event {
             session,
             cursor,
             at: Timestamp::now(),
+            protocol: None,
+            historical_only: false,
             kind,
         }
+    }
+}
+
+/// Protocol data recorded with a history entry. Application state stays in `kind`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ProtocolRecord {
+    pub message: serde_json::Value,
+    pub start: Cursor,
+    pub turn: Option<TurnId>,
+}
+
+impl Event {
+    /// Conversation events do not belong to the BAS management subscription.
+    pub fn management(&self) -> Option<Self> {
+        let mut event = self.clone();
+        event.protocol = None;
+        event.historical_only = false;
+        event.kind = match &self.kind {
+            EventKind::Acp(_) | EventKind::Subagent(_) => return None,
+            EventKind::TurnStarted { turn, .. } => EventKind::ActivityChanged { turn: Some(*turn) },
+            EventKind::TurnFinished { .. } => EventKind::ActivityChanged { turn: None },
+            kind => kind.clone(),
+        };
+        Some(event)
+    }
+}
+
+impl Event {
+    /// Returns the protocol exchange represented by this history record.
+    pub fn observation(&self) -> Option<ProtocolRecord> {
+        if let Some(record) = &self.protocol {
+            return Some(record.clone());
+        }
+        if self.historical_only {
+            return None;
+        }
+        let params = match &self.kind {
+            EventKind::Acp(update) => {
+                serde_json::json!({"sessionId":self.session, "update":update})
+            }
+            EventKind::Subagent(notification) => {
+                serde_json::to_value(notification).expect("ACP notification")
+            }
+            _ => return None,
+        };
+        Some(ProtocolRecord {
+            message: serde_json::json!({"jsonrpc":"2.0", "method":"session/update", "params":params}),
+            start: self.cursor,
+            turn: None,
+        })
     }
 }

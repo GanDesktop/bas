@@ -71,7 +71,7 @@ impl Session {
         Ok(())
     }
 
-    async fn acceptance_locked(
+    pub(super) async fn acceptance_locked(
         &self,
         turn: TurnId,
     ) -> Result<Option<storage::PromptAcceptance>, SessionError> {
@@ -171,7 +171,10 @@ impl Session {
             };
             let mut meta = session.meta();
             session
-                .publish_submission_locked(events, &mut meta, Some(acceptance))
+                .publish_submission_locked(events, &mut meta, Some(acceptance), Some(bas::model::ProtocolRecord {
+                    message: serde_json::json!({"jsonrpc":"2.0", "id":receipt.request_id.map(|id| id.to_string()).unwrap_or_else(|| receipt.turn.to_string()), "method":"session/prompt", "params":request}),
+                    start: receipt.cursor, turn: Some(receipt.turn),
+                }))
                 .await?;
             let dispatch = {
                 let mut state = session.lock();

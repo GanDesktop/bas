@@ -392,6 +392,7 @@ async fn sdk_authentication_routes_native_elicitation_without_bas_envelopes() {
         let prepared = prepare(
             client.channel(),
             pb::PrepareAcpRequest {
+                callbacks_only: false,
                 target: Some(pb::prepare_acp_request::Target::Authentication(
                     authentication,
                 )),
@@ -461,6 +462,7 @@ async fn sdk_authentication_keeps_terminal_plans_on_bas_auxiliary_control() {
         let prepared = prepare(
             client.channel(),
             pb::PrepareAcpRequest {
+                callbacks_only: false,
                 target: Some(pb::prepare_acp_request::Target::Authentication(
                     authentication,
                 )),

@@ -45,53 +45,62 @@ pub(super) async fn load<B: Bas + 'static>(
         return Err(crate::acp::Error::invalid_params()
             .data("configure the session through Bas before attaching"));
     }
-    let mut after = None;
-    loop {
-        let page = backend
-            .load_history(Request::new(pb::LoadHistoryRequest {
+    if !connection.callbacks_only {
+        let mut after = None;
+        loop {
+            let page = backend
+                .load_history(Request::new(pb::LoadHistoryRequest {
+                    session: session.clone(),
+                    after,
+                    limit: 256,
+                }))
+                .await
+                .map_err(status)?
+                .into_inner();
+            for event in page
+                .events
+                .iter()
+                .filter(|event| event.cursor <= snapshot.revision)
+            {
+                notify(&cx, event)?;
+            }
+            match page.next {
+                Some(next)
+                    if next < snapshot.revision && after.is_none_or(|previous| next > previous) =>
+                {
+                    after = Some(next)
+                }
+                Some(next) if after.is_some_and(|previous| next <= previous) => {
+                    return Err(protocol("non-advancing history cursor"));
+                }
+                _ => break,
+            }
+        }
+        let events = backend
+            .observe_acp(Request::new(pb::AttachRequest {
                 session: session.clone(),
-                after,
-                limit: 256,
+                cursor: Some(snapshot.revision),
+                replay: 0,
             }))
             .await
             .map_err(status)?
             .into_inner();
-        for event in page
-            .events
-            .iter()
-            .filter(|event| event.cursor <= snapshot.revision)
-        {
-            notify(&cx, event)?;
-        }
-        match page.next {
-            Some(next)
-                if next < snapshot.revision && after.is_none_or(|previous| next > previous) =>
-            {
-                after = Some(next)
+        let mut events = Box::pin(events);
+        let live = cx.clone();
+        cx.spawn(async move {
+            while let Some(event) = events.next().await {
+                let event = event.map_err(status)?;
+                let message: Value = serde_json::from_slice(&event.json).map_err(protocol)?;
+                if message.get("method").and_then(Value::as_str) == Some("session/update") {
+                    live.send_notification(UntypedMessage::new(
+                        "session/update",
+                        message["params"].clone(),
+                    )?)?;
+                }
             }
-            Some(next) if after.is_some_and(|previous| next <= previous) => {
-                return Err(protocol("non-advancing history cursor"));
-            }
-            _ => break,
-        }
+            Ok(())
+        })?;
     }
-    let events = backend
-        .attach(Request::new(pb::AttachRequest {
-            session: session.clone(),
-            cursor: Some(snapshot.revision),
-            replay: 0,
-        }))
-        .await
-        .map_err(status)?
-        .into_inner();
-    let mut events = Box::pin(events);
-    let live = cx.clone();
-    cx.spawn(async move {
-        while let Some(event) = events.next().await {
-            notify(&live, &event.map_err(status)?)?;
-        }
-        Ok(())
-    })?;
     if connection.interactive {
         callbacks(backend, connection, session, cx).await?;
     }
@@ -187,31 +196,48 @@ async fn prompt<B: Bas + 'static>(
         }
         None => return Err(crate::acp::Error::internal_error()),
     };
-    let events = backend
-        .attach(Request::new(pb::AttachRequest {
-            session,
-            cursor: Some(cursor),
-            replay: 0,
-        }))
-        .await
-        .map_err(status)?
-        .into_inner();
-    let mut events = Box::pin(events);
-    while let Some(event) = events.next().await {
-        match event.map_err(status)?.kind {
-            Some(pb::event::Kind::TurnFinished(finished)) if finished.turn == turn => {
-                return match finished.outcome {
-                    Some(pb::turn_finished::Outcome::Response(response)) => value(response),
-                    Some(pb::turn_finished::Outcome::Error(error)) => {
-                        Err(error.decode().map_err(protocol)?)
-                    }
-                    None => Err(crate::acp::Error::internal_error()),
-                };
+    let mut events = Box::pin(
+        backend
+            .observe_acp(Request::new(pb::AttachRequest {
+                session: session.clone(),
+                cursor: Some(cursor),
+                replay: 0,
+            }))
+            .await
+            .map_err(status)?
+            .into_inner(),
+    );
+    let mut management = Box::pin(
+        backend
+            .attach(Request::new(pb::AttachRequest {
+                session,
+                cursor: Some(cursor),
+                replay: 0,
+            }))
+            .await
+            .map_err(status)?
+            .into_inner(),
+    );
+    let mut protocol_open = true;
+    let mut management_open = true;
+    loop {
+        if !protocol_open && !management_open {
+            break;
+        }
+        tokio::select! {
+            event = events.next(), if protocol_open => {
+                let Some(event) = event else { protocol_open = false; continue };
+                let event = event.map_err(status)?;
+                if event.turn.as_deref() != Some(turn.as_str()) { continue; }
+                let message: Value = serde_json::from_slice(&event.json).map_err(protocol)?;
+                if let Some(result) = message.get("result") { return Ok(result.clone()); }
+                if let Some(error) = message.get("error") { return Err(serde_json::from_value(error.clone()).map_err(protocol)?); }
             }
-            Some(pb::event::Kind::TurnInterrupted(interrupted)) if interrupted.turn == turn => {
-                return Err(protocol(interrupted.message));
+            event = management.next(), if management_open => {
+                let Some(event) = event else { management_open = false; continue };
+                if let Some(pb::management_event::Kind::TurnInterrupted(interrupted)) = event.map_err(status)?.kind
+                    && interrupted.turn == turn { return Err(protocol(interrupted.message)); }
             }
-            _ => {}
         }
     }
     Err(protocol("session ended before the prompt result"))

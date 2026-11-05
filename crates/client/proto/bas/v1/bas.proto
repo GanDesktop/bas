@@ -65,9 +65,11 @@ service Bas {
   rpc SetArchived(SetArchivedRequest) returns (SetArchivedResponse);
   // Stops a session's backend and forgets it.
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
-  // Attaches to a session: replays history, then streams live events until the
-  // client disconnects. Detaching never stops the agent.
-  rpc Attach(AttachRequest) returns (stream Event);
+  // BAS management events only. Conversation content and Agent results are
+  // observed through ObserveAcp. Detaching never stops the Agent.
+  rpc Attach(AttachRequest) returns (stream ManagementEvent);
+  // ACP observation has protocol-only JSON payloads, independent of management.
+  rpc ObserveAcp(AttachRequest) returns (stream AcpObservation);
   // Registers a client-identified submission. Retries with the same identity
   // and payload return the original acceptance without dispatching again.
   rpc Prompt(PromptSubmission) returns (PromptSubmissionResponse);
@@ -461,6 +463,8 @@ message ArchiveChanged {
   bool archived = 1;
 }
 
+message ActivityChanged { optional string turn = 1; }
+
 message StatusChanged {
   SessionStatus status = 1;
 }
@@ -476,6 +480,9 @@ message Event {
   // events use 0 and must not replace the last cursor used for resumption.
   uint64 cursor = 2;
   uint64 at = 3;
+  // Internal history projection, never populated on the management stream.
+  AcpObservation protocol = 4;
+  bool historical_only = 5;
   reserved 10, 11, 12;
   oneof kind {
     // ACP SessionUpdate, including content, tools, plans, commands and options.
@@ -490,6 +497,23 @@ message Event {
     // Original ACP SessionNotification for an announced child.
     AcpPayload subagent_update = 22;
     TurnInterrupted turn_interrupted = 20;
+    ActivityChanged activity_changed = 23;
+  }
+}
+
+// Application state only; ACP payloads are not variants of this stream.
+message ManagementEvent {
+  string session = 1;
+  uint64 cursor = 2;
+  uint64 at = 3;
+  oneof kind {
+    ActivityChanged activity_changed = 10;
+    TitleChanged title_changed = 11;
+    StatusChanged status_changed = 12;
+    Failed failed = 13;
+    ArchiveChanged archive_changed = 14;
+    WorkspaceChanged workspace_changed = 15;
+    TurnInterrupted turn_interrupted = 16;
   }
 }
 
@@ -673,8 +697,10 @@ message PrepareAcpRequest {
     string session = 1;
     AuthenticateAgentRequest authentication = 2;
   }
-  // Interactive connections own the session's approval/elicitation callbacks.
+  // Interactive connections may answer shared approval/elicitation callbacks.
   bool interactive = 3;
+  // Frontends using ObserveAcp need callbacks/commands without a second replay.
+  bool callbacks_only = 4;
 }
 message PreparedAcpConnection { string id = 1; }
 message AcpMessage { bytes json = 1; }
@@ -695,4 +721,15 @@ message AcpAuxiliaryEvent {
     TerminalInvocation terminal = 1;
     string progress = 2;
   }
+}
+
+// Storage positions are outside the unmodified JSON-RPC payload.
+message AcpObservation {
+  string session = 1;
+  uint64 cursor = 2;
+  uint64 at = 3;
+  bytes json = 4;
+  optional string turn = 5;
+  // First history position represented by this message.
+  uint64 start = 6;
 }

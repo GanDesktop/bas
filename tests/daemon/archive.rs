@@ -48,7 +48,7 @@ async fn cli_archive_and_restore_keep_the_same_conversation() {
         .to_owned();
     let mut stream = daemon
         .client
-        .attach(pb::AttachRequest {
+        .observe_acp(pb::AttachRequest {
             session: id.clone(),
             cursor: None,
             replay: 0,
@@ -59,7 +59,11 @@ async fn cli_archive_and_restore_keep_the_same_conversation() {
     successful(daemon.cli(&["prompt", &id, "before archive"]).await);
     tokio::time::timeout(TIMEOUT, async {
         while let Some(event) = stream.message().await.expect("event stream") {
-            if matches!(event.kind, Some(pb::event::Kind::TurnFinished(_))) {
+            if serde_json::from_slice::<serde_json::Value>(&event.json)
+                .expect("ACP response")
+                .get("result")
+                .is_some()
+            {
                 return;
             }
         }

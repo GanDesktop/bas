@@ -152,6 +152,48 @@ impl SessionMeta {
         self.updated_at = Timestamp::now();
     }
 
+    /// Applies an independently ordered BAS management event. Protocol content
+    /// may already have advanced the shared history revision beyond this event.
+    pub fn apply_management(&mut self, event: &Event) {
+        let revision = self.revision;
+        let updated_at = self.updated_at;
+        self.revision = Cursor::START;
+        self.apply_event(event);
+        self.revision = self.revision.max(revision);
+        self.updated_at = self.updated_at.max(updated_at);
+    }
+
+    /// Applies a live protocol observation after the observer has checked its
+    /// own cursor. Management can arrive ahead of content on the other stream.
+    pub fn apply_protocol(&mut self, event: &Event) {
+        if event.is_transient() || event.session != self.id {
+            return;
+        }
+        match &event.kind {
+            EventKind::Acp(update) => {
+                if matches!(update, crate::acp::SessionUpdate::AgentMessageChunk(_)) {
+                    self.last_reply = self.last_reply.max(event.cursor);
+                }
+                // A newer BAS title/snapshot takes precedence over an older title notification.
+                if !matches!(update, crate::acp::SessionUpdate::SessionInfoUpdate(_))
+                    || event.cursor > self.revision
+                {
+                    self.apply_acp(update);
+                }
+            }
+            EventKind::Subagent(notification) => {
+                if let crate::acp::SessionUpdate::SubagentUpdate(update) = &notification.update {
+                    let _ = self
+                        .subagents
+                        .apply(Some(notification.session_id.0.as_ref()), update);
+                }
+            }
+            _ => {}
+        }
+        self.revision = self.revision.max(event.cursor);
+        self.updated_at = self.updated_at.max(event.at);
+    }
+
     /// Applies only events newer than this snapshot. Content replay has its own cursor.
     pub fn apply_event(&mut self, event: &Event) -> bool {
         if event.is_transient() || event.session != self.id || event.cursor <= self.revision {
@@ -181,6 +223,14 @@ impl SessionMeta {
                 self.additional_directories = directories.clone();
                 self.acp = Some(config.clone());
                 self.subagents = subagents.clone();
+            }
+            EventKind::ActivityChanged { turn } => {
+                self.status = if turn.is_some() {
+                    SessionStatus::Working
+                } else {
+                    SessionStatus::Idle
+                };
+                self.active_turn = *turn;
             }
             EventKind::StatusChanged { status } => {
                 self.status = *status;

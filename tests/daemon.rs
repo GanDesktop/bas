@@ -279,7 +279,7 @@ async fn cli_overrides_invalid_environment_and_shutdown_closes_live_streams() {
     let mut stopped = false;
     tokio::time::timeout(TIMEOUT, async {
         while let Some(event) = stream.message().await.expect("stream drains cleanly") {
-            if matches!(event.kind, Some(pb::event::Kind::StatusChanged(pb::StatusChanged { status })) if status == pb::SessionStatus::Stopped as i32) { stopped = true; }
+            if matches!(event.kind, Some(pb::management_event::Kind::StatusChanged(pb::StatusChanged { status })) if status == pb::SessionStatus::Stopped as i32) { stopped = true; }
         }
     }).await.expect("stream closes");
     assert!(stopped, "shutdown must publish a stopped event");

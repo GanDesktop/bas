@@ -29,3 +29,5 @@ pub use target::*;
 
 #[cfg(test)]
 mod tests;
+
+mod observation;

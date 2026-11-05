@@ -31,7 +31,7 @@ async fn storage_failure_can_be_retried_without_restarting_daemon_or_resending_p
     let id = created.id.clone();
     let mut stream = daemon
         .client
-        .attach(pb::AttachRequest {
+        .observe_acp(pb::AttachRequest {
             session: id.clone(),
             cursor: None,
             replay: 0,
@@ -50,7 +50,11 @@ async fn storage_failure_can_be_retried_without_restarting_daemon_or_resending_p
     cli(&daemon, &prompt).await;
     tokio::time::timeout(TIMEOUT, async {
         while let Some(event) = stream.message().await.expect("turn event") {
-            if matches!(event.kind, Some(pb::event::Kind::TurnFinished(_))) {
+            if serde_json::from_slice::<serde_json::Value>(&event.json)
+                .expect("ACP response")
+                .get("result")
+                .is_some()
+            {
                 return;
             }
         }
@@ -194,7 +198,7 @@ async fn localdb_survives_daemon_restart_with_history_and_the_same_session_id() 
         .to_owned();
     let mut stream = daemon
         .client
-        .attach(pb::AttachRequest {
+        .observe_acp(pb::AttachRequest {
             session: id.clone(),
             cursor: None,
             replay: 0,
@@ -205,7 +209,11 @@ async fn localdb_survives_daemon_restart_with_history_and_the_same_session_id() 
     cli(&daemon, &["prompt", &id, "before restart"]).await;
     tokio::time::timeout(TIMEOUT, async {
         while let Some(event) = stream.message().await.expect("event stream") {
-            if matches!(event.kind, Some(pb::event::Kind::TurnFinished(_))) {
+            if serde_json::from_slice::<serde_json::Value>(&event.json)
+                .expect("ACP response")
+                .get("result")
+                .is_some()
+            {
                 return;
             }
         }
@@ -243,7 +251,7 @@ async fn localdb_survives_daemon_restart_with_history_and_the_same_session_id() 
     cli(&daemon, &["session", "restore", &id]).await;
     let mut stream = daemon
         .client
-        .attach(pb::AttachRequest {
+        .observe_acp(pb::AttachRequest {
             session: id.clone(),
             cursor: None,
             replay: 0,
@@ -254,7 +262,11 @@ async fn localdb_survives_daemon_restart_with_history_and_the_same_session_id() 
     cli(&daemon, &["prompt", &id, "after restart"]).await;
     tokio::time::timeout(TIMEOUT, async {
         while let Some(event) = stream.message().await.expect("event stream") {
-            if matches!(event.kind, Some(pb::event::Kind::TurnFinished(_))) {
+            if serde_json::from_slice::<serde_json::Value>(&event.json)
+                .expect("ACP response")
+                .get("result")
+                .is_some()
+            {
                 return;
             }
         }

@@ -174,6 +174,7 @@ impl Timeline {
         self.end_line(stdout)?;
 
         match &decoded.kind {
+            EventKind::ActivityChanged { .. } => {}
             EventKind::Failed { message } => {
                 if self.interruption.take().as_ref() == Some(&(decoded.session, message.clone())) {
                     return stdout.flush().context("cannot flush stdout");

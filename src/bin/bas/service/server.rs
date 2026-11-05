@@ -641,7 +641,8 @@ impl Bas for Service {
         Ok(Response::new(pb::DeleteSessionResponse {}))
     }
 
-    type AttachStream = Pin<Box<dyn Stream<Item = Result<pb::Event, Status>> + Send + 'static>>;
+    type AttachStream =
+        Pin<Box<dyn Stream<Item = Result<pb::ManagementEvent, Status>> + Send + 'static>>;
 
     async fn attach(
         &self,
@@ -655,9 +656,35 @@ impl Bas for Service {
                 cursor: request.cursor.map(Cursor::from_raw),
             })
             .await?;
-        let stream = attachment.into_stream().map(|event| match event {
-            Ok(event) => Ok(pb::Event::from(&event)),
-            Err(error) => Err(error.into()),
+        let stream = attachment.into_stream().filter_map(|event| {
+            futures::future::ready(match event {
+                Ok(event) => pb::ManagementEvent::from_event(&event).map(Ok),
+                Err(error) => Some(Err(error.into())),
+            })
+        });
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    type ObserveAcpStream =
+        Pin<Box<dyn Stream<Item = Result<pb::AcpObservation, Status>> + Send + 'static>>;
+
+    async fn observe_acp(
+        &self,
+        request: Request<pb::AttachRequest>,
+    ) -> Result<Response<Self::ObserveAcpStream>, Status> {
+        let request = request.into_inner();
+        let session = self.session(&request.session).await?;
+        let attachment = session
+            .try_attach(AttachOptions {
+                replay: request.replay as usize,
+                cursor: request.cursor.map(Cursor::from_raw),
+            })
+            .await?;
+        let stream = attachment.into_stream().filter_map(|event| {
+            futures::future::ready(match event {
+                Ok(event) => pb::AcpObservation::from_event(&event).map(Ok),
+                Err(error) => Some(Err(error.into())),
+            })
         });
         Ok(Response::new(Box::pin(stream)))
     }

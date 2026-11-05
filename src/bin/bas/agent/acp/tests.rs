@@ -810,7 +810,7 @@ async fn native_acp_requests_options_and_rich_updates_cross_the_service_and_repl
         .cursor
         .raw();
     let mut stream = service
-        .attach(Request::new(pb::AttachRequest {
+        .observe_acp(Request::new(pb::AttachRequest {
             session: id.clone(),
             cursor: Some(before),
             replay: 0,
@@ -834,10 +834,17 @@ async fn native_acp_requests_options_and_rich_updates_cross_the_service_and_repl
     let events = tokio::time::timeout(TIMEOUT, async {
         let mut events = Vec::new();
         loop {
-            let event = Event::try_from(stream.next().await.expect("stream").expect("event"))
+            let batch = stream
+                .next()
+                .await
+                .expect("stream")
+                .expect("event")
+                .history_events()
                 .expect("decode");
-            let done = matches!(event.kind, EventKind::TurnFinished { .. });
-            events.push(event);
+            let done = batch
+                .iter()
+                .any(|event| matches!(event.kind, EventKind::TurnFinished { .. }));
+            events.extend(batch);
             if done {
                 break events;
             }
@@ -904,7 +911,16 @@ async fn native_acp_requests_options_and_rich_updates_cross_the_service_and_repl
             .windows(2)
             .all(|pair| pair[0].cursor.next() == pair[1].cursor)
     );
-    assert_eq!(replay, ordered);
+    assert_eq!(
+        replay
+            .iter()
+            .map(|event| (event.session, event.cursor, &event.kind))
+            .collect::<Vec<_>>(),
+        ordered
+            .iter()
+            .map(|event| (event.session, event.cursor, &event.kind))
+            .collect::<Vec<_>>()
+    );
     registry.shutdown().await;
     wait_for_exit(&directory).await;
 }
