@@ -302,41 +302,35 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bas-client",
+ "bas-protocol",
+ "bas-server",
  "bzip2",
  "clap",
  "dirs",
- "email_address",
  "flate2",
  "futures",
- "hyper-util",
  "nix",
  "process-wrap",
  "prost",
- "prost-types",
  "rcgen",
  "reedline",
  "regex",
  "reqwest",
  "rusqlite",
- "rustls",
  "sd-notify",
  "semver",
  "serde",
  "serde_json",
  "sha2",
- "strum",
  "tar",
  "tempfile",
  "thiserror",
- "time",
  "toasty",
  "toasty-driver-sqlite",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "tonic",
- "tonic-prost",
- "tower",
  "tracing",
  "tracing-journald",
  "tracing-subscriber",
@@ -351,7 +345,21 @@ name = "bas-client"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
- "anyhow",
+ "bas-protocol",
+ "futures",
+ "prost",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "bas-protocol"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol-schema",
  "dirs",
  "email_address",
  "futures",
@@ -360,9 +368,7 @@ dependencies = [
  "prost",
  "prost-types",
  "protoc-bin-vendored",
- "rcgen",
  "regex",
- "reqwest",
  "rustls",
  "serde",
  "serde_json",
@@ -372,14 +378,27 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "tokio-stream",
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
  "tower",
- "tracing",
+ "url",
  "uuid",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "bas-server"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "bas-protocol",
+ "futures",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "uuid",
 ]
 
 [[package]]

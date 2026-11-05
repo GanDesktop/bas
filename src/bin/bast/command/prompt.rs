@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use bas::{
     acp,
     model::{PromptSubmission, PromptSubmissionOutcome, SessionId, TurnId, TurnReceipt},
-    service::Client,
 };
+use bas_client::service::Client;
 
 /// Sends a user turn and prints the turn id.
 ///
@@ -12,7 +12,7 @@ use bas::{
 /// Returns an explicit rejection or an error leaving acceptance unknown.
 pub(super) async fn send(
     client: &mut Client,
-    server: &bas::service::Target,
+    server: &bas_client::service::Target,
     session: &str,
     turn: Option<TurnId>,
     text: Vec<String>,
@@ -56,7 +56,7 @@ fn submission(session: &str, turn: Option<TurnId>, text: Vec<String>) -> PromptS
     }
 }
 
-fn unknown_message(server: &bas::service::Target, session: &str, turn: TurnId) -> String {
+fn unknown_message(server: &bas_client::service::Target, session: &str, turn: TurnId) -> String {
     format!(
         "prompt acceptance unknown for submission {turn}; query with `bast --server {server} prompt-status {session} {turn}` \
          or explicitly retry with `bast --server {server} prompt {session} --submission {turn} <exact original text>`; \

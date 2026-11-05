@@ -3,7 +3,7 @@ use crate::{
     agent::{AgentSpec, Command},
     storage::{LocalDb, Storage},
 };
-use bas::service::Client;
+use bas_client::service::Client;
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_util::task::AbortOnDropHandle;
 

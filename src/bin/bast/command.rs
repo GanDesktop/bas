@@ -7,7 +7,7 @@ mod prompt;
 mod session;
 
 use anyhow::Result;
-use bas::service::Client;
+use bas_client::service::Client;
 
 use crate::clap::Command;
 
@@ -18,7 +18,11 @@ impl Command {
     ///
     /// Returns an error when the daemon rejects the request or the connection
     /// fails mid-call.
-    pub async fn run(self, client: &mut Client, server: &bas::service::Target) -> Result<()> {
+    pub async fn run(
+        self,
+        client: &mut Client,
+        server: &bas_client::service::Target,
+    ) -> Result<()> {
         match self {
             Command::Agents => agents::list(client).await,
             Command::Agent(command) => command.run(client, server).await,

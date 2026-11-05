@@ -9,7 +9,7 @@ pub(super) fn protocol(error: impl std::fmt::Display) -> crate::acp::Error {
     crate::acp::Error::internal_error().data(error.to_string())
 }
 pub(super) fn status(error: Status) -> crate::acp::Error {
-    crate::service::acp_error(&error).unwrap_or_else(|_| protocol(error.message()))
+    bas_protocol::protocol::acp_error(&error).unwrap_or_else(|_| protocol(error.message()))
 }
 pub(super) fn payload(value: Value) -> pb::AcpPayload {
     pb::AcpPayload {
@@ -184,7 +184,7 @@ async fn dispatch<B: Bas + 'static>(
             if loaded.load(Ordering::Acquire) != 2 {
                 return Err(crate::acp::Error::invalid_request());
             }
-            session::request(gateway.backend.clone(), connection, request, id).await
+            session::request(gateway.backend.clone(), connection, request).await
         }
         pb::prepare_acp_request::Target::Authentication(_) if request.method == "authenticate" => {
             authentication::run(gateway, connection, request.params, id, cx).await

@@ -5,7 +5,7 @@ use super::parse_input;
 
 #[test]
 fn login_completion_requires_connected_readiness() {
-    use bas::service::pb::{AgentCheckStatus, CheckAgentResponse};
+    use bas_client::service::pb::{AgentCheckStatus, CheckAgentResponse};
 
     let ready = CheckAgentResponse {
         status: AgentCheckStatus::Connected.into(),

@@ -1,5 +1,5 @@
 use super::*;
-use bas::service::tls::{ClientTls, ConnectionOptions};
+use bas_client::service::tls::{ClientTls, ConnectionOptions};
 use rcgen::{BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, KeyPair};
 use std::path::{Path, PathBuf};
 use tonic::transport::{Certificate, ClientTlsConfig, Endpoint};

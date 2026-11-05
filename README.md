@@ -43,12 +43,15 @@ QEMU/NixOS 系统测试目前不在仓库中，后续统一补全。
 ```text
 🦀Cargo.toml
   +--🦀build.rs                      可执行程序构建来源信息
-  +--🦀crates/client/                独立 bas-client 包
-  |   +--📄proto/bas/v1/bas.proto     gRPC 接口定义（bas.v1.Bas）
-  |   +--🦀build.rs                  生成协议与客户端/可选服务端接口
-  |   +--🦀src/model.rs              会话生命周期、事件信封与 ACP 类型导出
-  |   +--🦀src/service.rs            gRPC 信封、ACP JSON 编解码与客户端连接
-  +--🦀src/lib.rs                    复用 bas-client，提供守护进程配置存储
+  +--🦀crates/protocol/              公共 bas-protocol 包
+  |   +--📄proto/bas/v1/bas.proto     gRPC 接口定义
+  |   +--🦀build.rs                  按角色生成协议接口
+  |   +--🦀src/model.rs              会话、事件与公共数据模型
+  |   +--🦀src/protocol.rs           gRPC 信封、ACP 转换与历史视图
+  |   +--🦀src/connection.rs         可选的 IPC/TLS 传输基础
+  +--🦀crates/client/                bas-client：RPC 查询与 ACP 连接
+  +--🦀crates/server/                bas-server：ACP 服务端网关
+  +--🦀src/lib.rs                    复用公共协议，提供守护进程配置存储
   +--🦀src/bin/bas/                  守护进程内部实现
   |   +--🦀main.rs                   组装与启动
   |   +--🦀agent.rs                  后端抽象与驱动
@@ -67,8 +70,9 @@ QEMU/NixOS 系统测试目前不在仓库中，后续统一补全。
   +--🦀src/bin/bast/                 命令行管理工具
 ```
 
-公共库导出 `bas::acp`（agent-client-protocol 3.3.0 的 v1 schema）、`bas::acp_v2`（展示模型）、`bas::model` 与 `bas::service`。后端驱动、会话运行时和
-守护进程配置由 `bas` 的私有模块管理；客户端通过 gRPC 使用它们。
+`bas-protocol` 导出 ACP schema、BAS 模型与协议；`bas-client` 和 `bas-server` 分别依赖它。
+后端驱动、会话运行时和守护进程配置由 `bas` 的私有模块管理；客户端通过 gRPC 使用它们。
+职责、feature 与测试边界见 [crate 组织](docs/design/crates.md)。
 
 ## 构建与运行
 

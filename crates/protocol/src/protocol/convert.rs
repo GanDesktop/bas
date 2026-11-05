@@ -701,3 +701,10 @@ impl TryFrom<pb::ManagementEvent> for model::Event {
         .try_into()
     }
 }
+
+/// Extracts a native ACP error returned in gRPC status details.
+/// # Errors
+/// Returns an error when the status does not contain a valid ACP error object.
+pub fn acp_error(status: &tonic::Status) -> Result<crate::acp::Error, serde_json::Error> {
+    serde_json::from_slice(status.details())
+}

@@ -998,10 +998,10 @@ async fn admission_receipt_and_observed_input_use_the_actual_agent_request_id() 
     let id = receipt.request_id.expect("Agent request ID");
     let raw = tokio::time::timeout(TIMEOUT, async {
         loop {
-            if let Ok(bytes) = tokio::fs::read(directory.path().join("pid.request")).await {
-                if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                    break value;
-                }
+            if let Ok(bytes) = tokio::fs::read(directory.path().join("pid.request")).await
+                && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes)
+            {
+                break value;
             }
             tokio::task::yield_now().await;
         }

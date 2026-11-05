@@ -102,10 +102,8 @@ impl Drop for Subscription {
             && self.snapshots.same_channel(&entry.snapshots.subscribe())
         {
             entry.viewers -= 1;
-            if entry.viewers == 0 {
-                if entry.connection.is_none() {
-                    state.remove(&self.session);
-                }
+            if entry.viewers == 0 && entry.connection.is_none() {
+                state.remove(&self.session);
             }
         }
     }

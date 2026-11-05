@@ -9,8 +9,8 @@ use bas::{
     model::{
         Event, EventKind, PromptSubmission, PromptSubmissionOutcome, SessionId, SessionMeta, TurnId,
     },
-    service::Client,
 };
+use bas_client::service::Client;
 use futures::future::BoxFuture;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::sync::{Notify, mpsc};

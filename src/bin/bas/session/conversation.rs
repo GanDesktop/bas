@@ -1084,10 +1084,10 @@ impl Session {
                 meta.apply_event(&event);
                 events.push(event);
             }
-            if let Some(record) = protocol {
-                if let Some(last) = events.last_mut() {
-                    last.protocol = Some(record);
-                }
+            if let Some(record) = protocol
+                && let Some(last) = events.last_mut()
+            {
+                last.protocol = Some(record);
             }
             (events, state.storage.clone())
         };

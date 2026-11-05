@@ -1,4 +1,4 @@
-//! Generate protocol messages and client stubs from the canonical BAS schema.
+//! Generate protocol messages and role-specific stubs from the canonical BAS schema.
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed={}", schema.display());
     tonic_prost_build::configure()
         .build_server(cfg!(feature = "server"))
-        .build_client(true)
+        .build_client(cfg!(feature = "client"))
         .file_descriptor_set_path(out.join("bas_descriptor.bin"))
         .compile_with_config(config, &[schema], &[root.join("proto")])?;
     Ok(())

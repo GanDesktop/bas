@@ -122,7 +122,7 @@ pub enum TurnUpdate {
 /// An input reserved before the session publishes its admission event.
 pub enum PreparedPrompt {
     Local(acp::PromptRequest),
-    Acp(agent_client_protocol::PreparedRequest<serde_json::Value>),
+    Acp(Box<agent_client_protocol::PreparedRequest<serde_json::Value>>),
 }
 impl PreparedPrompt {
     /// The SDK allocates UUID string IDs on the persistent Agent connection.

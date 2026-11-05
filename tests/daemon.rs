@@ -1,6 +1,6 @@
 //! Process tests for configuration selection and graceful shutdown with live RPCs.
 
-use bas::service::{Client, Target, pb};
+use bas_client::service::{Client, Target, pb};
 use std::{process::Stdio, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader, Lines},

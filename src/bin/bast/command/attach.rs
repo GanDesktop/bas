@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use bas::service::{Client, pb};
+use bas_client::service::{Client, pb};
 use tokio_stream::StreamExt;
 
 use crate::render;

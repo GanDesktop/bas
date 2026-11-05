@@ -13,8 +13,8 @@ fn canonicalization_rejects_non_utf8_even_through_utf8_symlinks() {
     for path in [&invalid, &link] {
         let error = protocol_cwd(path).expect_err("canonical non-UTF-8 paths cannot cross RPC");
         assert!(matches!(
-            error.downcast_ref::<bas::service::Error>(),
-            Some(bas::service::Error::NonUtf8Cwd)
+            error.downcast_ref::<bas_client::service::Error>(),
+            Some(bas_client::service::Error::NonUtf8Cwd)
         ));
     }
     let valid = root.path().join("中文");

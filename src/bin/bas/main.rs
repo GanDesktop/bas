@@ -81,8 +81,7 @@ async fn run(config: Config) -> Result<()> {
     let stopping = tokio_util::sync::CancellationToken::new();
     let tls = config.tls.as_ref().map(|tls| tls.load()).transpose()?;
     let service = service::Service::new(Arc::clone(&registry)).with_manager(Arc::clone(&manager));
-    let acp = bas::service::acp::server::Gateway::new(service.clone())
-        .with_authentication(service.clone());
+    let acp = bas_server::Gateway::new(service.clone()).with_authentication(service.clone());
     for target in &config.listen {
         let mut server = tonic::transport::Server::builder();
         let bind_target = match target {

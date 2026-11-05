@@ -1,6 +1,6 @@
-//! Optional server-side adapter over the Bas management/journal API.
+//! Server-side adapter over the Bas management/journal API.
 //! Session execution remains owned by the backend, never by a transport task.
-use crate::service::pb::{
+use bas_protocol::protocol::pb::{
     self,
     acp_transport_server::{AcpTransport, AcpTransportServer},
     bas_server::Bas,
@@ -34,7 +34,6 @@ pub trait Authentication: Send + Sync + 'static {
 
 const PREPARE_TTL: Duration = Duration::from_secs(60);
 const MAX_CONNECTIONS: usize = 1024;
-const MAX_BINDINGS: usize = 1024;
 
 struct Prepared {
     at: Instant,
@@ -51,8 +50,6 @@ struct Connection {
     target: pb::prepare_acp_request::Target,
     interactive: bool,
     callbacks_only: bool,
-    bindings: Mutex<HashMap<String, Binding>>,
-    submitted: tokio::sync::Notify,
     capabilities: Mutex<serde_json::Value>,
     auxiliary: broadcast::Sender<pb::AcpAuxiliaryEvent>,
     authentication: Mutex<Option<mpsc::Sender<pb::AuthenticationInput>>>,
@@ -70,11 +67,6 @@ impl Connection {
                 .and_then(|value| value.get(mode))
                 .is_some_and(serde_json::Value::is_object)
     }
-}
-
-struct Binding {
-    turn: String,
-    outcome: Option<Result<pb::PromptSubmissionResponse, Status>>,
 }
 
 pub struct Gateway<B> {
@@ -105,8 +97,8 @@ impl<B: Bas + 'static> Gateway<B> {
     }
     pub fn into_server(self) -> AcpTransportServer<Self> {
         AcpTransportServer::new(self)
-            .max_decoding_message_size(crate::service::MAX_MESSAGE_SIZE)
-            .max_encoding_message_size(crate::service::MAX_MESSAGE_SIZE)
+            .max_decoding_message_size(bas_protocol::protocol::MAX_MESSAGE_SIZE)
+            .max_encoding_message_size(bas_protocol::protocol::MAX_MESSAGE_SIZE)
     }
     fn active(&self, id: &str) -> Result<Arc<Connection>, Status> {
         self.state
@@ -190,7 +182,7 @@ impl<B: Bas + 'static> AcpTransport for Gateway<B> {
     ) -> Result<Response<Self::OpenStream>, Status> {
         let id = request
             .metadata()
-            .get(super::transport::CONNECTION_HEADER)
+            .get(bas_protocol::protocol::ACP_CONNECTION_HEADER)
             .and_then(|value| value.to_str().ok())
             .ok_or_else(|| Status::unauthenticated("missing prepared connection"))?
             .to_owned();
@@ -207,8 +199,6 @@ impl<B: Bas + 'static> AcpTransport for Gateway<B> {
                 target: prepared.target,
                 interactive: prepared.interactive,
                 callbacks_only: prepared.callbacks_only,
-                bindings: Mutex::default(),
-                submitted: tokio::sync::Notify::new(),
                 capabilities: Mutex::new(serde_json::Value::Null),
                 auxiliary: broadcast::channel(32).0,
                 authentication: Mutex::default(),
@@ -238,65 +228,6 @@ impl<B: Bas + 'static> AcpTransport for Gateway<B> {
                     .map(|message| (message, (receive, task)))
             });
         Ok(Response::new(Box::pin(stream)))
-    }
-    async fn bind_submission(
-        &self,
-        request: Request<pb::BindAcpSubmissionRequest>,
-    ) -> Result<Response<pb::AcpControlResponse>, Status> {
-        let request = request.into_inner();
-        let _: crate::model::TurnId = request
-            .turn
-            .parse()
-            .map_err(|_| Status::invalid_argument("invalid turn"))?;
-        let id: serde_json::Value = serde_json::from_str(&request.request_id)
-            .map_err(|_| Status::invalid_argument("invalid request ID"))?;
-        if !id.is_string() && !id.is_number() {
-            return Err(Status::invalid_argument("invalid request ID"));
-        }
-        let connection = self.active(&request.connection)?;
-        if !matches!(
-            connection.target,
-            pb::prepare_acp_request::Target::Session(_)
-        ) {
-            return Err(Status::failed_precondition("not a session connection"));
-        }
-        let mut bindings = connection.bindings.lock().expect("submission bindings");
-        if bindings.contains_key(&request.request_id) {
-            return Err(Status::already_exists("request already bound"));
-        }
-        if bindings.len() >= MAX_BINDINGS {
-            return Err(Status::resource_exhausted("too many submissions"));
-        }
-        bindings.insert(
-            request.request_id,
-            Binding {
-                turn: request.turn,
-                outcome: None,
-            },
-        );
-        Ok(Response::new(pb::AcpControlResponse {}))
-    }
-    async fn submission_state(
-        &self,
-        request: Request<pb::BindAcpSubmissionRequest>,
-    ) -> Result<Response<pb::PromptSubmissionResponse>, Status> {
-        let request = request.into_inner();
-        let connection = self.active(&request.connection)?;
-        loop {
-            let changed = connection.submitted.notified();
-            {
-                let mut bindings = connection.bindings.lock().expect("submission bindings");
-                let binding = bindings
-                    .get(&request.request_id)
-                    .filter(|binding| binding.turn == request.turn)
-                    .ok_or_else(|| Status::not_found("unknown submission binding"))?;
-                if let Some(outcome) = binding.outcome.clone() {
-                    bindings.remove(&request.request_id);
-                    return outcome.map(Response::new);
-                }
-            }
-            changed.await;
-        }
     }
     type WatchAuxiliaryStream =
         Pin<Box<dyn Stream<Item = Result<pb::AcpAuxiliaryEvent, Status>> + Send>>;

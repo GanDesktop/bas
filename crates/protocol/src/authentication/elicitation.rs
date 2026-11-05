@@ -268,7 +268,7 @@ fn parse_url(object: &Map<String, Value>) -> Result<Url, Error> {
     if raw_url.chars().any(char::is_control) || raw_url.trim() != raw_url {
         return Err(elicitation("授权网址包含无效字符"));
     }
-    let url = reqwest::Url::parse(raw_url).map_err(|_| elicitation("授权网址无效"))?;
+    let url = url::Url::parse(raw_url).map_err(|_| elicitation("授权网址无效"))?;
     if !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
@@ -586,7 +586,7 @@ fn validate_string(schema: &Map<String, Value>, value: &str) -> Result<(), Strin
     if let Some(format) = schema.get("format").and_then(Value::as_str) {
         let valid = match format {
             "email" => valid_email(value),
-            "uri" => reqwest::Url::parse(value).is_ok(),
+            "uri" => url::Url::parse(value).is_ok(),
             "date" => valid_date(value),
             "date-time" => valid_date_time(value),
             _ => false,

@@ -6,8 +6,11 @@ Nix 依赖由 `flake.lock` 固定，Rust 依赖由 `Cargo.lock` 固定。
 
 ```sh
 nix develop -c cargo fmt --all -- --check
-nix develop -c cargo test --all-targets --locked
-nix develop -c cargo clippy --all-targets --locked -- -D warnings
+nix develop -c cargo test -p bas-protocol --no-default-features --locked
+nix develop -c cargo test -p bas-client --locked
+nix develop -c cargo test -p bas-server --locked
+nix develop -c cargo test --workspace --all-targets --locked
+nix develop -c cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
 覆盖共享模型、配置、会话存储、ACP 后端、终端输出、gRPC、进程生命周期和本地传输。

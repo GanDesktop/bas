@@ -1,33 +1,6 @@
-//! The gRPC surface exposed to clients.
-//!
-//! `bas` serves [`pb::bas_server`]; `bast` and other terminal clients consume
-//! [`pb::bas_client`]. ACP requests and updates use SDK JSON inside
-//! [`pb::AcpPayload`]; protobuf defines daemon management and replay envelopes.
-
+//! Client connections and queries over the shared BAS wire contract.
+pub use bas_protocol::connection::*;
+pub use bas_protocol::protocol::*;
 pub mod acp;
 mod client;
-mod convert;
-mod defaults;
-mod target;
-
-pub mod tls;
-pub mod transport;
-
-pub mod pb {
-    //! Generated protobuf messages and service stubs.
-
-    tonic::include_proto!("bas.v1");
-
-    /// Encoded `FileDescriptorSet`, for gRPC reflection servers.
-    pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("bas_descriptor");
-}
-
 pub use client::*;
-pub use convert::*;
-pub use defaults::*;
-pub use target::*;
-
-#[cfg(test)]
-mod tests;
-
-mod observation;

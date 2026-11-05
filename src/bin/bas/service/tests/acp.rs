@@ -2,11 +2,12 @@ use super::*;
 use bas::{
     acp,
     model::{PromptSubmission, PromptSubmissionOutcome},
-    service::{
-        Client,
-        acp::{Incoming, Link, prepare, sdk, server::Gateway},
-    },
 };
+use bas_client::service::{
+    Client,
+    acp::{Incoming, Link, prepare, sdk},
+};
+use bas_server::Gateway;
 
 struct Server {
     task: tokio::task::JoinHandle<()>,
@@ -83,7 +84,7 @@ async fn connect(client: &Client, session: &crate::session::Session, interactive
 }
 
 #[tokio::test]
-async fn sdk_prompt_survives_disconnect_and_reconnect_without_redispatch() {
+async fn admitted_prompt_survives_disconnect_and_reconnect_without_redispatch() {
     tokio::time::timeout(Duration::from_secs(10), async {
         let registry = registry(1000);
         let session = create(&registry).await;
@@ -93,8 +94,11 @@ async fn sdk_prompt_survives_disconnect_and_reconnect_without_redispatch() {
             session.id().to_string(),
             vec!["background ".repeat(100).into()],
         ));
-        let PromptSubmissionOutcome::Accepted(receipt) =
-            link.submit(&submission).await.expect("receipt")
+        let PromptSubmissionOutcome::Accepted(receipt) = server
+            .client
+            .submit_prompt(&submission)
+            .await
+            .expect("receipt")
         else {
             panic!("accepted")
         };
@@ -127,7 +131,11 @@ async fn sdk_prompt_survives_disconnect_and_reconnect_without_redispatch() {
         }
         let link = connect(&server.client, &session, false).await;
         assert_eq!(
-            link.submit(&submission).await.expect("idempotent receipt"),
+            server
+                .client
+                .submit_prompt(&submission)
+                .await
+                .expect("idempotent receipt"),
             PromptSubmissionOutcome::Accepted(receipt)
         );
         let response = link
@@ -153,7 +161,7 @@ async fn prepared_stream_is_single_use_scoped_and_allows_multiple_subscribers() 
     let other = create(&registry).await;
     let server = serve(registry.clone()).await;
     let link = connect(&server.client, &session, true).await;
-    let mut reused = bas::service::acp::Prepared {
+    let mut reused = bas_client::service::acp::Prepared {
         id: link.prepared.id.clone(),
         control: link.prepared.control.clone(),
     };

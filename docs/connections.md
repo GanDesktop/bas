@@ -7,12 +7,15 @@ Bas 和 BasT 共用连接目标格式。Bas 和 BasT 默认使用同一系统用
 
 ## Rust 客户端
 
-`crates/client` 提供独立的 `bas-client` 包，包含协议模型、认证数据和 RPC 客户端，
-协议定义随包放在 `crates/client/proto`。外部前端可以通过本仓库的固定 Git revision 引用它。
-界面消息拼装、富内容渲染和窗口可见状态由前端管理；服务端不提供桌面通知或 `SetForeground` RPC。
-默认构建只生成客户端接口，不包含监听器、服务端 TLS、注册安装解析或 daemon 配置存储。
-守护进程通过 `server` feature 复用服务端协议和传输；模拟 RPC 服务的测试可启用 `test-support`。
-前端自己的外观、连接配置与缓存由前端负责，`bas-client` 不读取或保存这些设置。
+`crates/client` 提供独立的 `bas-client` 包，只负责 RPC 查询与 ACP 连接。
+公共模型、认证数据、历史分页数据和 protobuf 定义位于 `crates/protocol` 的 `bas-protocol` 包；
+`crates/server` 的 `bas-server` 包提供 ACP 网关。客户端与网关分别依赖公共库，不互相依赖。
+外部前端可以通过本仓库的固定 Git revision 引用 `bas-client`。
+
+`bas-protocol` 默认只提供模型与协议；`client` / `server` features 分别生成对应的 gRPC 接口，
+并启用共用的安全传输实现。模拟服务的测试显式依赖 `bas-server` 或 `bas-protocol/server`。
+前端自己的外观、连接配置、缓存和消息渲染由前端负责；这些库不保存前端设置。
+完整职责边界见 [crate 组织](design/crates.md)。
 
 ## 默认本地连接
 
@@ -51,7 +54,7 @@ Unix 默认使用 `$XDG_RUNTIME_DIR/bas-<uid>/service.sock`；没有运行时目
 
 TCP 支持系统 DNS、hosts 文件和已配置的 Tailscale MagicDNS；不依赖 Tailscale。
 配置解析和加载时不查询 DNS，连接（含重连）或绑定监听地址时才由系统解析。
-TCP 和 mTLS 的端口可省略，统一使用 [`DEFAULT_PORT`](../crates/client/src/service/defaults.rs) 定义的默认端口，例如 `workstation`、
+TCP 和 mTLS 的端口可省略，统一使用 [`DEFAULT_PORT`](../crates/protocol/src/protocol/defaults.rs) 定义的默认端口，例如 `workstation`、
 `tcp://192.0.2.10` 或 `mtls://workstation`。显式端口必须为 `0` 到 `65535` 的数字；
 监听端口 `0` 会报告实际分配的 IP 和端口，不会被替换为默认值。
 IPv6 必须使用方括号，例如 `tcp://[::1]` 或 `tcp://[::1]:7443`。

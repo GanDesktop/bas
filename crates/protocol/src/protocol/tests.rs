@@ -112,7 +112,7 @@ fn session_capabilities_modes_and_options_round_trip() {
     session.archived = true;
     session.last_reply = Cursor::from_raw(98);
     session.initialization = Some(
-        acp::InitializeResponse::new(agent_client_protocol::schema::ProtocolVersion::V1)
+        acp::InitializeResponse::new(agent_client_protocol_schema::ProtocolVersion::V1)
             .agent_capabilities(
                 acp::AgentCapabilities::new().prompt_capabilities(
                     acp::PromptCapabilities::new()

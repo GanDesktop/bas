@@ -4,7 +4,7 @@ use futures::{SinkExt, StreamExt};
 use std::io;
 use tonic::transport::Channel;
 
-pub const CONNECTION_HEADER: &str = "bas-acp-connection";
+pub use bas_protocol::protocol::ACP_CONNECTION_HEADER as CONNECTION_HEADER;
 pub type Control = pb::acp_transport_client::AcpTransportClient<Channel>;
 
 pub struct Prepared {

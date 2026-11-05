@@ -34,7 +34,7 @@
 
 上表是相对默认根目录的路径，不能直接用于所有安装：
 
-- 设置根目录由 [共享目录规则](../crates/client/src/config/paths.rs) 选择：绝对
+- 设置根目录由 [共享目录规则](../crates/protocol/src/config/paths.rs) 选择：绝对
   `XDG_CONFIG_HOME` 优先，否则使用系统用户配置目录。后端使用 `--daemon-settings-file` /
   `BAS_DAEMON_SETTINGS_FILE`。旧统一文件兼容规则见 [安装说明](install.md#配置-acp-后端)。
 - 数据库使用同一模块的状态根目录：绝对 `XDG_STATE_HOME` 优先，否则使用系统状态目录，
@@ -65,7 +65,7 @@
 
 托管注册不仅记录程序路径，还绑定清单的绝对路径与 SHA-256。
 新版本只接受 `bas-installation.json` 这个清单文件名，见
-[安装引用校验](../crates/client/src/config/registration.rs)。仅移动外层数据目录并不足以完成迁移。
+[安装引用校验](../crates/protocol/src/config/registration.rs)。仅移动外层数据目录并不足以完成迁移。
 
 若保留安装目录的原绝对位置，可以在备份后只改清单文件名，并更新设置中的
 `installation.path`；清单内容字节不变时，其 SHA-256 不变。

@@ -5,7 +5,6 @@ use tonic::transport::{Channel, Endpoint};
 use super::pb;
 
 mod history;
-pub use history::*;
 
 /// How long a client waits for the daemon to accept a connection.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -197,11 +196,4 @@ impl Client {
     ) -> Result<Self, super::tls::Error> {
         Ok(Self::new(options.channel(CONNECT_TIMEOUT).await?).with_payload_limit())
     }
-}
-
-/// Extracts a native ACP error returned in gRPC status details.
-/// # Errors
-/// Returns an error when the status does not contain a valid ACP error object.
-pub fn acp_error(status: &tonic::Status) -> Result<crate::acp::Error, serde_json::Error> {
-    serde_json::from_slice(status.details())
 }

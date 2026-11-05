@@ -30,17 +30,21 @@ SDK 已知字段、annotations 和 `_meta` 保留原有语义；对未知字段�
 创建、删除、关闭、归档和历史分页继续使用 Bas 接口。初始化只声明该接口实际实现的能力。
 文件和工具终端仍在 daemon 主机执行，不转交给客户端。
 
-`interactive=true` 的会话连接拥有权限与 elicitation 回调，同一会话最多一个这样的连接。
-其他连接仍可观察和发送会话命令。回调使用连接内的 JSON-RPC ID；新连接不复用旧请求 ID。
-会话 elicitation 作用域映射为该连接的 sessionId；认证 elicitation 的 requestId 映射为客户端的 authenticate 请求 ID，
-不会把后端另一条连接上的请求 ID 暴露给客户端。
-断开不会停止已接受的回合；最后一个交互订阅离开时，待处理交互按 daemon 策略取消，
-不会在重连时自动执行旧的确认。客户端只声明自己支持的 elicitation 模式。
+`interactive=true` 的会话连接接收权限与 elicitation 回调，同一会话可以有多个交互连接。
+BAS 是 Agent 的常驻客户端；前端连接没有 controller 所有权，也不互相抢占。
+回调使用各连接内的 JSON-RPC ID；BAS 仅转交第一个有效回应，并结束其他投递。
+会话 elicitation 作用域映射为该连接的 sessionId；认证 elicitation 的 requestId 映射为客户端的 authenticate 请求 ID。
+前端断开只移除其订阅，不取消已接受的回合或待处理的 Agent 交互。
+客户端只声明自己支持的 elicitation 模式；Agent 生命周期由 daemon 管理。
 
-标准 `session/prompt` 响应在回合结束时返回 `PromptResponse`，不返回 Bas 的提交回执。
-需要持久化身份的客户端可以在发送前用 `BindSubmission` 绑定 SDK 预分配的请求 ID 与 turn，
-随后 `SubmissionState` 等待接受或拒绝结果。该回执只通过 Bas 控制接口返回。
-丢失响应后用 `GetPromptAcceptance` 查询；连接中断不自动重发 prompt。
+标准 `session/prompt` 响应在回合结束时返回 `PromptResponse`。
+需要入队回执的前端通过 Bas `Prompt` 提交，回执包含 BAS 向 Agent 发送请求时使用的 ACP request ID；
+丢失响应后用 `GetPromptAcceptance` 查询，不自动重发 prompt。旧的连接级绑定回执接口已移除。
+
+前端用 `ObserveAcp` 观察输入、输出与响应，用 `Attach` 观察 BAS 应用层状态。
+两条流互相独立，历史分页通过有限查询加载。界面消息由历史与 ACP 观察流驱动，回执不创建消息。
+使用这两条订阅的前端可在 `Prepare` 中设置 `callbacks_only=true`，让 SDK 连接只处理命令与回调，
+避免 `session/load` 再次重放全部历史。详见 [事件流分离](design/event-streams.md)。
 
 认证连接使用标准 `authenticate` 与 `elicitation/create` / `elicitation/complete`。
 客户端需要的终端启动计划通过 `WatchAuxiliary` 的 `TerminalInvocation` 返回，
@@ -272,8 +276,8 @@ daemon 生成的唯一 `request_id` 和完整 `RequestPermissionRequest`；新�
 未知选项返回 `InvalidArgument`，已失效、已回答或其他会话的请求返回 `FailedPrecondition`。
 有效响应只消费请求一次，随后发布移除该请求的快照；客户端不自动重试修改请求。
 
-回合取消、后端回调结束或会话删除会清理挂起请求。最后一个审批订阅断开时取消尚未
-回答的请求；进入过交互审批的会话在无订阅期间取消后续请求，不能回退为自动允许。
+回合取消、后端回调结束或会话删除会清理挂起请求。审批订阅断开不会取消请求；
+进入过交互审批的会话在无订阅期间继续等待回应，不能回退为自动允许。
 从未建立交互审批的会话沿用原有无界面权限策略。审批状态不持久化到历史，客户端
 断线重连必须使用新的待审批快照，不能重放旧的回答。
 
@@ -285,9 +289,9 @@ daemon 生成的唯一 `request_id` 和完整 `RequestPermissionRequest`；新�
 待处理快照包含原始请求、唯一回答 ID 和 `answered`；URL 已接受时保持等待状态，匹配
 完成通知后进入 `completed_ids`，其中记录的是 Bas 回答 ID。
 
-响应只消费一次，校验失败保留请求供修正。回调取消、回合取消、会话关闭、连接替换
-或最后一个查看者断开会清理交互；无查看者时返回取消。旧连接的完成或取消不会影响
-新连接。重连读取当前快照，不能重放旧答案或自动打开 URL。
+响应只消费一次，校验失败保留请求供修正。回调取消、回合取消、会话关闭或 Agent 连接替换
+会清理交互；前端查看者断开不取消请求。旧 Agent 连接的完成或取消不会影响
+新连接。前端重连读取当前快照，不能重放旧答案或自动打开 URL。
 
 ### 可恢复归档
 

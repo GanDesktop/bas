@@ -225,10 +225,10 @@ impl Target {
         }
     }
 
-    pub(super) async fn channel(
-        &self,
-        timeout: Duration,
-    ) -> Result<Channel, tonic::transport::Error> {
+    /// Connects with the same target and identity checks as `channel_lazy`.
+    /// # Errors
+    /// Returns connection or transport authentication errors.
+    pub async fn channel(&self, timeout: Duration) -> Result<Channel, tonic::transport::Error> {
         let endpoint = self.endpoint(timeout);
         match self {
             Self::Tcp(_) => endpoint.connect().await,

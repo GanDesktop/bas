@@ -10,7 +10,7 @@ mod safe;
 
 use ::clap::Parser;
 use anyhow::{Context, Result};
-use bas::service::Client;
+use bas_client::service::Client;
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {

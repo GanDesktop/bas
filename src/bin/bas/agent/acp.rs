@@ -758,10 +758,10 @@ impl AgentTrait for Session {
         mut request: v1::PromptRequest,
     ) -> Result<super::PreparedPrompt, Error> {
         request.session_id = self.acp_session.clone();
-        Ok(super::PreparedPrompt::Acp(
+        Ok(super::PreparedPrompt::Acp(Box::new(
             self.connection
                 .prepare_request(request.to_untyped_message()?),
-        ))
+        )))
     }
 
     fn prompt(&mut self, turn: TurnId, request: v1::PromptRequest) -> Result<(), Error> {

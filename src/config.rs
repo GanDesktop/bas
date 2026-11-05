@@ -1,6 +1,6 @@
 //! Daemon settings with conflict-aware persistence.
 mod store;
-pub use bas_client::config::{
+pub use bas_protocol::config::{
     AcpLifecycle, AgentSpec, Daemon, MAX_ACP_POOL_RESERVE, agent, paths, registration,
     validate_agents,
 };

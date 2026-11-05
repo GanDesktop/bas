@@ -1,6 +1,5 @@
 //! A running SDK connection; Bas controls stay outside the JSON-RPC transport.
 use super::{Prepared, sdk};
-use crate::{model::PromptSubmission, service::pb};
 use tokio::sync::{mpsc, oneshot};
 
 pub enum Incoming {
@@ -70,39 +69,5 @@ impl Link {
     }
     pub fn is_closed(&self) -> bool {
         self.task.is_finished() || self.peer.is_incoming_closed()
-    }
-
-    /// Submit a standard ACP prompt with a Bas-owned receipt, without resending.
-    /// # Errors
-    /// A lost connection leaves acceptance unknown; query the Bas journal to resolve it.
-    pub async fn submit(
-        &self,
-        submission: &PromptSubmission,
-    ) -> Result<crate::model::PromptSubmissionOutcome, tonic::Status> {
-        let request = self.peer.prepare_request(submission.request.clone());
-        let binding = pb::BindAcpSubmissionRequest {
-            connection: self.prepared.id.clone(),
-            request_id: serde_json::to_string(request.id()).expect("SDK request ID"),
-            turn: submission.turn.to_string(),
-        };
-        let mut control = self.prepared.control.clone();
-        control.bind_submission(binding.clone()).await?;
-        request
-            .detach()
-            .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
-        let outcome: crate::model::PromptSubmissionOutcome = control
-            .submission_state(binding)
-            .await?
-            .into_inner()
-            .try_into()
-            .map_err(|error: crate::service::Error| tonic::Status::data_loss(error.to_string()))?;
-        if let crate::model::PromptSubmissionOutcome::Accepted(receipt) = &outcome
-            && receipt.turn != submission.turn
-        {
-            return Err(tonic::Status::data_loss(
-                "acceptance belongs to another submission",
-            ));
-        }
-        Ok(outcome)
     }
 }

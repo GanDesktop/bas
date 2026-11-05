@@ -37,7 +37,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::service::Target;
+use crate::connection::Target;
 
 #[cfg(all(test, feature = "server"))]
 mod tests;

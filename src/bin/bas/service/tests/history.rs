@@ -3,8 +3,8 @@ use crate::storage::{Memory, Storage};
 use bas::{
     acp,
     model::{Event, EventKind, SessionId, SessionMeta},
-    service::Client,
 };
+use bas_client::service::Client;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 

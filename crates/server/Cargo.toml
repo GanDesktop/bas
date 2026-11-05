@@ -1,0 +1,21 @@
+[package]
+name = "bas-server"
+version = "0.1.0"
+edition = "2024"
+description = "BAS server transport adapters"
+repository = "https://github.com/GanDesktop/bas"
+license = "MIT"
+publish = false
+
+[features]
+default = []
+
+[dependencies]
+bas-protocol = { path = "../protocol", features = ["server"] }
+agent-client-protocol = { version = "=3.3.0", features = ["unstable", "unstable_protocol_v2"] }
+futures = "0.3"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio-stream = "0.1"
+tonic = { version = "0.14", features = ["tls-ring", "gzip"] }
+uuid = { version = "1", features = ["v4"] }

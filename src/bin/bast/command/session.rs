@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use bas::service::{Client, pb};
+use bas_client::service::{Client, pb};
 
 use crate::{clap, render};
 
@@ -160,7 +160,7 @@ async fn rename(client: &mut Client, session: &str, title: &str) -> Result<()> {
 /// Returns an error if the path cannot be resolved or its canonical form is not UTF-8.
 fn protocol_cwd(cwd: &std::path::Path) -> Result<String> {
     let cwd = std::fs::canonicalize(cwd).context("cannot resolve the working directory")?;
-    Ok(bas::service::utf8_cwd(&cwd)?.to_owned())
+    Ok(bas_client::service::utf8_cwd(&cwd)?.to_owned())
 }
 
 #[cfg(all(test, unix))]

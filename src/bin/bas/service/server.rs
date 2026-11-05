@@ -1190,8 +1190,8 @@ fn decode<T: serde::de::DeserializeOwned>(request: Request<pb::AcpPayload>) -> R
 impl Service {
     async fn authentication_stream(
         &self,
-        input: bas::service::acp::server::AuthenticationInput,
-    ) -> Result<bas::service::acp::server::AuthenticationEvents, Status> {
+        input: bas_server::AuthenticationInput,
+    ) -> Result<bas_server::AuthenticationEvents, Status> {
         let mut input = input;
         let first = tokio::time::timeout(std::time::Duration::from_secs(30), input.next())
             .await
@@ -1274,17 +1274,14 @@ impl Service {
                 receive.recv().await.map(|event| (event, (receive, task)))
             },
         );
-        Ok(Box::pin(stream) as bas::service::acp::server::AuthenticationEvents)
+        Ok(Box::pin(stream) as bas_server::AuthenticationEvents)
     }
 }
-impl bas::service::acp::server::Authentication for Service {
+impl bas_server::Authentication for Service {
     fn start(
         &self,
-        input: bas::service::acp::server::AuthenticationInput,
-    ) -> futures::future::BoxFuture<
-        'static,
-        Result<bas::service::acp::server::AuthenticationEvents, Status>,
-    > {
+        input: bas_server::AuthenticationInput,
+    ) -> futures::future::BoxFuture<'static, Result<bas_server::AuthenticationEvents, Status>> {
         let service = self.clone();
         Box::pin(async move { service.authentication_stream(input).await })
     }

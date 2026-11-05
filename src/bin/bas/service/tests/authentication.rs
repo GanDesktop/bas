@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use bas::service::{Client, pb};
+use bas_client::service::{Client, pb};
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 
 use super::super::Service;
@@ -46,8 +46,7 @@ async fn server(
         .expect("listener");
     let address = listener.local_addr().expect("address");
     let service = Service::new(registry.clone());
-    let gateway = bas::service::acp::server::Gateway::new(service.clone())
-        .with_authentication(service.clone());
+    let gateway = bas_server::Gateway::new(service.clone()).with_authentication(service.clone());
     let task = tokio::spawn(
         tonic::transport::Server::builder()
             .add_service(service.into_server())
@@ -381,7 +380,7 @@ fn assert_authentication_failure(error: &tonic::Status, stage: &str, code: i32, 
 
 #[tokio::test]
 async fn sdk_authentication_routes_native_elicitation_without_bas_envelopes() {
-    use bas::service::acp::{Incoming, Link, prepare, sdk};
+    use bas_client::service::acp::{Incoming, Link, prepare, sdk};
     tokio::time::timeout(Duration::from_secs(10), async {
         let directory = tempfile::tempdir().expect("directory");
         let spec = spec(&directory);
@@ -447,7 +446,7 @@ async fn sdk_authentication_routes_native_elicitation_without_bas_envelopes() {
 
 #[tokio::test]
 async fn sdk_authentication_keeps_terminal_plans_on_bas_auxiliary_control() {
-    use bas::service::acp::{Link, prepare, sdk};
+    use bas_client::service::acp::{Link, prepare, sdk};
     tokio::time::timeout(Duration::from_secs(10), async {
         let directory = tempfile::tempdir().expect("directory");
         let mut spec = spec(&directory);

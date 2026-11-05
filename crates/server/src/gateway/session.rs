@@ -135,11 +135,10 @@ pub(super) async fn request<B: Bas + 'static>(
     backend: Arc<B>,
     connection: Arc<Connection>,
     request: UntypedMessage,
-    request_id: String,
 ) -> Result<Value, crate::acp::Error> {
     let session = validate(&connection, &request.params)?;
     match request.method.as_str() {
-        "session/prompt" => prompt(backend, connection, session, request.params, request_id).await,
+        "session/prompt" => prompt(backend, session, request.params).await,
         "session/set_config_option" => value(
             backend
                 .set_config_option(Request::new(payload(request.params)))
@@ -159,18 +158,10 @@ pub(super) async fn request<B: Bas + 'static>(
 }
 async fn prompt<B: Bas + 'static>(
     backend: Arc<B>,
-    connection: Arc<Connection>,
     session: String,
     params: Value,
-    request_id: String,
 ) -> Result<Value, crate::acp::Error> {
-    let turn = connection
-        .bindings
-        .lock()
-        .expect("submission bindings")
-        .get(&request_id)
-        .map(|binding| binding.turn.clone())
-        .unwrap_or_else(|| crate::model::TurnId::new().to_string());
+    let turn = crate::model::TurnId::new().to_string();
     // The backend commits and owns execution; transport cancellation cannot stop it.
     let response = backend
         .prompt(Request::new(pb::PromptSubmission {
@@ -179,15 +170,6 @@ async fn prompt<B: Bas + 'static>(
         }))
         .await
         .map(Response::into_inner);
-    if let Some(binding) = connection
-        .bindings
-        .lock()
-        .expect("submission bindings")
-        .get_mut(&request_id)
-    {
-        binding.outcome = Some(response.clone());
-    }
-    connection.submitted.notify_waiters();
     let response = response.map_err(status)?;
     let cursor = match response.outcome {
         Some(pb::prompt_submission_response::Outcome::Accepted(accepted)) => accepted.cursor,

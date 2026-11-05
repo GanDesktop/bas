@@ -3,10 +3,8 @@ use crate::{
     service::Service,
     session::{CreateRequest, Limits, Registry},
 };
-use bas::{
-    model::Owner,
-    service::{Client, pb},
-};
+use bas::{model::Owner, service::pb};
+use bas_client::service::Client;
 use std::{sync::Arc, time::Duration};
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_util::task::AbortOnDropHandle;

@@ -18,7 +18,7 @@ use std::{
 #[cfg(feature = "server")]
 use tokio::net::UnixListener;
 
-use crate::service::Target;
+use crate::connection::Target;
 
 pub(super) type Stream = tokio::net::UnixStream;
 

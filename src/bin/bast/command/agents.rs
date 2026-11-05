@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use bas::service::{Client, pb};
+use bas_client::service::{Client, pb};
 
 use crate::clap::Agent;
 use crate::render;
@@ -31,7 +31,7 @@ impl Agent {
     pub(crate) async fn run(
         self,
         client: &mut Client,
-        server: &bas::service::Target,
+        server: &bas_client::service::Target,
     ) -> Result<()> {
         match self {
             Self::Catalog { refresh, json } => {
@@ -103,7 +103,7 @@ fn status(status: bas::management::Status) -> &'static str {
     }
 }
 
-fn require_local_terminal(server: &bas::service::Target) -> Result<()> {
+fn require_local_terminal(server: &bas_client::service::Target) -> Result<()> {
     anyhow::ensure!(
         server.is_local(),
         "Complete terminal authentication on the server host"
@@ -166,7 +166,7 @@ async fn login(
     client: &mut Client,
     spec: &bas::config::AgentSpec,
     selected: Option<&str>,
-    server: &bas::service::Target,
+    server: &bas_client::service::Target,
 ) -> Result<()> {
     let checked = check(client, spec).await?;
     if checked.status() == pb::AgentCheckStatus::Connected {

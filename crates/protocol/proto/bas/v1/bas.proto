@@ -83,7 +83,7 @@ service Bas {
   // ACP session/set_mode request and response.
   rpc SetMode(AcpPayload) returns (AcpPayload);
   // Subscribes an interactive approver; each update replaces the pending set.
-  // Unsubscribing the last approver cancels outstanding approval requests.
+  // Unsubscribing does not cancel Agent-owned approval requests.
   rpc WatchPermissions(WatchPermissionsRequest) returns (stream PermissionSnapshot);
   // Answers exactly one live ACP request using an agent-provided option id.
   rpc RespondPermission(RespondPermissionRequest) returns (RespondPermissionResponse);
@@ -687,8 +687,6 @@ service AcpTransport {
   // The prepared connection ID is supplied in bas-acp-connection metadata.
   // Every frame contains only a complete ACP JSON-RPC message.
   rpc Open(stream AcpMessage) returns (stream AcpMessage);
-  rpc BindSubmission(BindAcpSubmissionRequest) returns (AcpControlResponse);
-  rpc SubmissionState(BindAcpSubmissionRequest) returns (PromptSubmissionResponse);
   rpc WatchAuxiliary(AcpConnectionRequest) returns (stream AcpAuxiliaryEvent);
   rpc TerminalResult(AcpTerminalResultRequest) returns (AcpControlResponse);
 }
@@ -705,12 +703,6 @@ message PrepareAcpRequest {
 message PreparedAcpConnection { string id = 1; }
 message AcpMessage { bytes json = 1; }
 message AcpConnectionRequest { string connection = 1; }
-message BindAcpSubmissionRequest {
-  string connection = 1;
-  // JSON representation of the ACP request ID, not part of its params.
-  string request_id = 2;
-  string turn = 3;
-}
 message AcpTerminalResultRequest {
   string connection = 1;
   int32 exit_code = 2;

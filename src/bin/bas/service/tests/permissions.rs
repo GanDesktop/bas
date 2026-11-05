@@ -144,7 +144,7 @@ async fn disconnecting_real_grpc_approval_stream_preserves_pending_request() {
             .add_service(Service::new(registry.clone()).into_server())
             .serve_with_incoming(TcpListenerStream::new(listener)),
     );
-    let mut client = bas::service::Client::connect_at(address)
+    let mut client = bas_client::service::Client::connect_at(address)
         .await
         .expect("client");
     let mut stream = client

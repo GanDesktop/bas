@@ -1,4 +1,4 @@
-use bas::service::Target;
+use bas_client::service::Target;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 #[command(name = "bast", version, long_about = None)]
 pub struct Args {
     /// Daemon target: local, unix:///path, pipe://NAME, tcp://HOST[:PORT] or mtls://HOST[:PORT].
-    #[arg(long, global = true, env = "BAS_SERVER", default_value = bas::service::DEFAULT_TARGET)]
+    #[arg(long, global = true, env = "BAS_SERVER", default_value = bas_client::service::DEFAULT_TARGET)]
     pub server: Target,
 
     /// PEM server CA bundle; requires an mtls:// target.
@@ -33,8 +33,8 @@ impl Args {
     /// Rejects incomplete credentials or TLS options on a non-TLS target.
     pub fn connection_options(
         &self,
-    ) -> Result<bas::service::tls::ConnectionOptions, bas::service::tls::Error> {
-        use bas::service::tls::{ClientTls, ConnectionOptions, Error};
+    ) -> Result<bas_client::service::tls::ConnectionOptions, bas_client::service::tls::Error> {
+        use bas_client::service::tls::{ClientTls, ConnectionOptions, Error};
         let tls = match (&self.tls_ca, &self.tls_certificate, &self.tls_key) {
             (Some(ca), Some(certificate), Some(private_key)) => Some(ClientTls {
                 ca: ca.clone(),
@@ -78,7 +78,7 @@ pub enum Command {
         #[arg(long)]
         cursor: Option<u64>,
         /// Replayable events to print before live ones.
-        #[arg(long, default_value_t = bas::service::DEFAULT_REPLAY)]
+        #[arg(long, default_value_t = bas_client::service::DEFAULT_REPLAY)]
         replay: usize,
     },
 
