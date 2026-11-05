@@ -18,7 +18,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
       ../build_metadata.rs
       ../build_metadata
       ../src
-      ../proto
+      ../crates
       ../tests
     ];
   };
@@ -29,7 +29,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     else
       "nix-source-${builtins.substring 0 32 (builtins.baseNameOf finalAttrs.src)}";
   cargoLock.lockFile = ../Cargo.lock;
-  cargoTestFlags = [ "--all-targets" ];
+  cargoTestFlags = [ "--workspace" "--all-targets" ];
   nativeBuildInputs = [ makeWrapper ];
   postInstall = ''
     wrapProgram "$out/bin/bas" \

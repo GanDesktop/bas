@@ -301,6 +301,7 @@ dependencies = [
  "agent-client-protocol",
  "anyhow",
  "async-trait",
+ "bas-client",
  "bzip2",
  "clap",
  "dirs",
@@ -312,7 +313,6 @@ dependencies = [
  "process-wrap",
  "prost",
  "prost-types",
- "protoc-bin-vendored",
  "rcgen",
  "reedline",
  "regex",
@@ -336,7 +336,6 @@ dependencies = [
  "tokio-util",
  "tonic",
  "tonic-prost",
- "tonic-prost-build",
  "tower",
  "tracing",
  "tracing-journald",
@@ -345,6 +344,42 @@ dependencies = [
  "which",
  "windows-sys 0.61.2",
  "zip",
+]
+
+[[package]]
+name = "bas-client"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "anyhow",
+ "dirs",
+ "email_address",
+ "futures",
+ "hyper-util",
+ "nix",
+ "prost",
+ "prost-types",
+ "protoc-bin-vendored",
+ "rcgen",
+ "regex",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "strum",
+ "tempfile",
+ "thiserror",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tower",
+ "tracing",
+ "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

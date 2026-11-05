@@ -18,12 +18,14 @@ jobs:
           python3 tests/install_bas.py -v
       - name: Check formatting
         run: nix develop -c cargo fmt --all -- --check
+      - name: Test standalone client
+        run: nix develop -c cargo test -p bas-client --locked
       - name: Build all application targets
-        run: nix develop -c cargo build --all-targets --locked
+        run: nix develop -c cargo build --workspace --all-targets --locked
       - name: Test daemon and protocol
-        run: nix develop -c cargo test --all-targets --locked
+        run: nix develop -c cargo test --workspace --all-targets --locked
       - name: Lint default targets
-        run: nix develop -c cargo clippy --all-targets --locked -- -D warnings
+        run: nix develop -c cargo clippy --workspace --all-targets --locked -- -D warnings
   native:
     strategy:
       fail-fast: false
@@ -39,10 +41,12 @@ jobs:
       - name: Use a physical temporary directory on macOS
         if: runner.os == 'macOS'
         run: echo 'TMPDIR=/private/tmp' >> "$GITHUB_ENV"
+      - name: Test standalone client
+        run: cargo test -p bas-client --locked
       - name: Build native server and terminal
-        run: cargo build --all-targets --locked
+        run: cargo build --workspace --all-targets --locked
       - name: Test shared model and configuration
-        run: cargo test --lib --locked
+        run: cargo test --workspace --lib --locked
       - name: Test cancellable CLI terminal input
         if: runner.os == 'Windows'
         run: 'cargo test --bin bast command::agents::terminal --locked'

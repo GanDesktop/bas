@@ -42,12 +42,13 @@ QEMU/NixOS 系统测试目前不在仓库中，后续统一补全。
 
 ```text
 🦀Cargo.toml
-  +--📄proto/bas/v1/bas.proto        gRPC 接口定义（bas.v1.Bas）
-  +--🦀build.rs                      protoc-bin-vendored + tonic-prost-build 生成代码
-  +--🦀src/lib.rs                    公共库：领域模型与客户端协议支持
-  |   +--🦀model.rs                  会话生命周期、事件信封与 ACP 类型导出
-  |   +--🦀service.rs                gRPC 信封、ACP JSON 编解码与客户端连接
-  |       +--🦀defaults.rs           客户端与守护进程共用的地址、回放默认值
+  +--🦀build.rs                      可执行程序构建来源信息
+  +--🦀crates/client/                独立 bas-client 包
+  |   +--📄proto/bas/v1/bas.proto     gRPC 接口定义（bas.v1.Bas）
+  |   +--🦀build.rs                  生成协议与客户端/可选服务端接口
+  |   +--🦀src/model.rs              会话生命周期、事件信封与 ACP 类型导出
+  |   +--🦀src/service.rs            gRPC 信封、ACP JSON 编解码与客户端连接
+  +--🦀src/lib.rs                    复用 bas-client，提供守护进程配置存储
   +--🦀src/bin/bas/                  守护进程内部实现
   |   +--🦀main.rs                   组装与启动
   |   +--🦀agent.rs                  后端抽象与驱动
