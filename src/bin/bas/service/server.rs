@@ -119,89 +119,9 @@ impl Bas for Service {
         &self,
         request: Request<tonic::Streaming<pb::AuthenticationInput>>,
     ) -> Result<Response<Self::AuthenticateAgentInteractiveStream>, Status> {
-        let mut input = request.into_inner();
-        let first = tokio::time::timeout(std::time::Duration::from_secs(30), input.message())
+        self.authentication_stream(Box::pin(request.into_inner()))
             .await
-            .map_err(|_| Status::deadline_exceeded("Authentication start was not received"))??
-            .ok_or_else(|| Status::invalid_argument("Authentication requires a start message"))?;
-        let Some(pb::authentication_input::Kind::Start(start)) = first.kind else {
-            return Err(Status::invalid_argument(
-                "The first authentication message must be start",
-            ));
-        };
-        let expected = expected_spec(&start.expected_spec_json)?;
-        let catalog = self.registry.catalog();
-        let spec = catalog
-            .spec(&start.agent.clone().into())
-            .filter(|spec| spec.as_ref() == &expected)
-            .cloned()
-            .ok_or_else(|| Status::failed_precondition("Agent configuration changed; retry"))?;
-        if spec.kind != crate::agent::Kind::Acp {
-            return Err(Status::invalid_argument(
-                "Only ACP agents support authentication",
-            ));
-        }
-        catalog
-            .validate(&spec)
-            .map_err(|error| Status::failed_precondition(error.to_string()))?;
-        let program = crate::agent::acp::resolve_program(&spec)
-            .ok_or_else(|| Status::failed_precondition("Agent executable is missing"))?;
-        let managed = catalog.managed(&spec.id).cloned();
-        let registry = Arc::clone(&self.registry);
-        let (send, receive) = tokio::sync::mpsc::channel(32);
-        let task = tokio::spawn(async move {
-            let _credentials = registry.credentials_change(spec.id.clone());
-            let (controls, controls_receive) = tokio::sync::mpsc::channel(16);
-            let operation = crate::agent::acp::authenticate_interactive(
-                &spec,
-                managed.as_ref(),
-                &start,
-                send.clone(),
-                controls_receive,
-                std::time::Duration::from_secs(900),
-            );
-            tokio::pin!(operation);
-            let result = loop {
-                tokio::select! {
-                    biased;
-                    () = send.closed() => return,
-                    () = registry.stopped() => break Err(Status::unavailable("Daemon is stopping")),
-                    result = &mut operation => break result.map_err(|error| super::authentication_error::status(&error)),
-                    message = input.message() => match message {
-                        Ok(Some(message)) => {
-                            if !Arc::ptr_eq(&catalog, &registry.catalog()) {
-                                break Err(Status::failed_precondition("Agent catalog changed during authentication; retry"));
-                            }
-                            if controls.send(message).await.is_err() { break Err(Status::cancelled("Authentication flow closed")); }
-                        }
-                        Ok(None) => break Err(Status::cancelled("Authentication input closed")),
-                        Err(error) => break Err(error),
-                    },
-                }
-            };
-            let result = result.and_then(|result| {
-                if !Arc::ptr_eq(&catalog, &registry.catalog()) {
-                    return Err(Status::failed_precondition(
-                        "Agent catalog changed during authentication; retry",
-                    ));
-                }
-                Ok(pb::AuthenticationEvent {
-                    kind: Some(pb::authentication_event::Kind::Check(authentication_check(
-                        result,
-                        &program,
-                        "Agent setup completed; readiness checked",
-                    ))),
-                })
-            });
-            let _ = send.send(result).await;
-        });
-        let stream = futures::stream::unfold(
-            (receive, tokio_util::task::AbortOnDropHandle::new(task)),
-            |(mut receive, task)| async move {
-                receive.recv().await.map(|event| (event, (receive, task)))
-            },
-        );
-        Ok(Response::new(Box::pin(stream)))
+            .map(Response::new)
     }
 
     async fn list_agent_catalog(
@@ -1155,4 +1075,107 @@ fn decode<T: serde::de::DeserializeOwned>(request: Request<pb::AcpPayload>) -> R
         .into_inner()
         .decode()
         .map_err(|error| Status::invalid_argument(error.to_string()))
+}
+
+impl Service {
+    async fn authentication_stream(
+        &self,
+        input: bas::service::acp::server::AuthenticationInput,
+    ) -> Result<bas::service::acp::server::AuthenticationEvents, Status> {
+        let mut input = input;
+        let first = tokio::time::timeout(std::time::Duration::from_secs(30), input.next())
+            .await
+            .map_err(|_| Status::deadline_exceeded("Authentication start was not received"))?
+            .ok_or_else(|| Status::invalid_argument("Authentication requires a start message"))??;
+        let Some(pb::authentication_input::Kind::Start(start)) = first.kind else {
+            return Err(Status::invalid_argument(
+                "The first authentication message must be start",
+            ));
+        };
+        let expected = expected_spec(&start.expected_spec_json)?;
+        let catalog = self.registry.catalog();
+        let spec = catalog
+            .spec(&start.agent.clone().into())
+            .filter(|spec| spec.as_ref() == &expected)
+            .cloned()
+            .ok_or_else(|| Status::failed_precondition("Agent configuration changed; retry"))?;
+        if spec.kind != crate::agent::Kind::Acp {
+            return Err(Status::invalid_argument(
+                "Only ACP agents support authentication",
+            ));
+        }
+        catalog
+            .validate(&spec)
+            .map_err(|error| Status::failed_precondition(error.to_string()))?;
+        let program = crate::agent::acp::resolve_program(&spec)
+            .ok_or_else(|| Status::failed_precondition("Agent executable is missing"))?;
+        let managed = catalog.managed(&spec.id).cloned();
+        let registry = Arc::clone(&self.registry);
+        let (send, receive) = tokio::sync::mpsc::channel(32);
+        let task = tokio::spawn(async move {
+            let _credentials = registry.credentials_change(spec.id.clone());
+            let (controls, controls_receive) = tokio::sync::mpsc::channel(16);
+            let operation = crate::agent::acp::authenticate_interactive(
+                &spec,
+                managed.as_ref(),
+                &start,
+                send.clone(),
+                controls_receive,
+                std::time::Duration::from_secs(900),
+            );
+            tokio::pin!(operation);
+            let result = loop {
+                tokio::select! {
+                    biased;
+                    () = send.closed() => return,
+                    () = registry.stopped() => break Err(Status::unavailable("Daemon is stopping")),
+                    result = &mut operation => break result.map_err(|error| super::authentication_error::status(&error)),
+                    message = input.next() => match message {
+                        Some(Ok(message)) => {
+                            if !Arc::ptr_eq(&catalog, &registry.catalog()) {
+                                break Err(Status::failed_precondition("Agent catalog changed during authentication; retry"));
+                            }
+                            if controls.send(message).await.is_err() { break Err(Status::cancelled("Authentication flow closed")); }
+                        }
+                        None => break Err(Status::cancelled("Authentication input closed")),
+                        Some(Err(error)) => break Err(error),
+                    },
+                }
+            };
+            let result = result.and_then(|result| {
+                if !Arc::ptr_eq(&catalog, &registry.catalog()) {
+                    return Err(Status::failed_precondition(
+                        "Agent catalog changed during authentication; retry",
+                    ));
+                }
+                Ok(pb::AuthenticationEvent {
+                    kind: Some(pb::authentication_event::Kind::Check(authentication_check(
+                        result,
+                        &program,
+                        "Agent setup completed; readiness checked",
+                    ))),
+                })
+            });
+            let _ = send.send(result).await;
+        });
+        let stream = futures::stream::unfold(
+            (receive, tokio_util::task::AbortOnDropHandle::new(task)),
+            |(mut receive, task)| async move {
+                receive.recv().await.map(|event| (event, (receive, task)))
+            },
+        );
+        Ok(Box::pin(stream) as bas::service::acp::server::AuthenticationEvents)
+    }
+}
+impl bas::service::acp::server::Authentication for Service {
+    fn start(
+        &self,
+        input: bas::service::acp::server::AuthenticationInput,
+    ) -> futures::future::BoxFuture<
+        'static,
+        Result<bas::service::acp::server::AuthenticationEvents, Status>,
+    > {
+        let service = self.clone();
+        Box::pin(async move { service.authentication_stream(input).await })
+    }
 }

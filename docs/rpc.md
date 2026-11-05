@@ -11,6 +11,44 @@ gRPC 保留会话管理与后台运行所需的信封。`AcpPayload.json` 是 UT
 ToolCall、ConfigOption 或 StopReason，也不经过会把 JSON 整数转为 double 的 Struct。
 SDK 已知字段、annotations 和 `_meta` 保留原有语义；对未知字段和无效可选项的处理遵循 SDK。
 
+### 客户端 ACP 流
+
+`bas.v1.AcpTransport` 把连接准备与 ACP 交互分开。调用顺序：
+
+1. 用 Bas 管理接口选择、创建或恢复会话；认证时选择注册与方法。
+2. `Prepare` 指定会话或认证目标，返回有效期 60 秒的一次性连接 ID。
+3. 将 ID 放入 `bas-acp-connection` gRPC metadata 调用双向 `Open`。
+4. 在该流上使用标准 ACP SDK：`initialize`，已有会话 `session/load`，随后发送请求和通知。
+
+`AcpMessage.json` 是完整的 UTF-8 JSON-RPC 消息，只有 ACP 请求、响应、错误和通知。
+流中没有 Bas 事件、cursor、turn、认证执行计划或额外的 Start/Check 信封。
+`bas_client::service::acp::Transport` 可直接交给 SDK Client builder；`Link` 提供运行中的连接句柄。
+
+会话连接只允许访问准备时选定的 Bas session ID。`session/load` 重放 ACP 历史后订阅实时更新，
+返回当前 modes/configOptions；cwd 必须与准备的会话一致，MCP 配置须在连接前由 Bas 管理。
+当前实现提供 `session/prompt`、`session/cancel`、`session/set_mode`、`session/set_config_option`；
+创建、删除、关闭、归档和历史分页继续使用 Bas 接口。初始化只声明该接口实际实现的能力。
+文件和工具终端仍在 daemon 主机执行，不转交给客户端。
+
+`interactive=true` 的会话连接拥有权限与 elicitation 回调，同一会话最多一个这样的连接。
+其他连接仍可观察和发送会话命令。回调使用连接内的 JSON-RPC ID；新连接不复用旧请求 ID。
+会话 elicitation 作用域映射为该连接的 sessionId；认证 elicitation 的 requestId 映射为客户端的 authenticate 请求 ID，
+不会把后端另一条连接上的请求 ID 暴露给客户端。
+断开不会停止已接受的回合；最后一个交互订阅离开时，待处理交互按 daemon 策略取消，
+不会在重连时自动执行旧的确认。客户端只声明自己支持的 elicitation 模式。
+
+标准 `session/prompt` 响应在回合结束时返回 `PromptResponse`，不返回 Bas 的提交回执。
+需要持久化身份的客户端可以在发送前用 `BindSubmission` 绑定 SDK 预分配的请求 ID 与 turn，
+随后 `SubmissionState` 等待接受或拒绝结果。该回执只通过 Bas 控制接口返回。
+丢失响应后用 `GetPromptAcceptance` 查询；连接中断不自动重发 prompt。
+
+认证连接使用标准 `authenticate` 与 `elicitation/create` / `elicitation/complete`。
+客户端需要的终端启动计划通过 `WatchAuxiliary` 的 `TerminalInvocation` 返回，
+退出码通过 `TerminalResult` 提交。应在发送 authenticate 前打开辅助订阅。
+`Session.subagents` 和 `WorkspaceChanged.subagents` 使用 Bas 的 `SubagentSnapshot`；
+这两类 Bas 模型不再装入 `AcpPayload`。现有 bast 暂保留原来的 Bas RPC 调用方式，
+新流不做旧协议探测、历史记录转换或自动回退。
+
 ACP `fs/read_text_file` 读取服务端所在机器上的 UTF-8 文本文件，不是图片读取接口。
 非 UTF-8 数据会返回 `InvalidParams`，错误消息明确说明文本限制；文件系统错误保留具体原因。
 图片通过 ACP `ImageContent` 内容块传输，是否支持输入图片由智能体声明的 prompt capability 决定。
@@ -74,7 +112,7 @@ TCP、mTLS 和本地 IPC 不改变这两条路径的含义。
 load／resume 重放恢复子会话快照，但不会把已有子消息再次追加进历史。
 这些能力在初始化时协商，更新 daemon 后应新建 session。这不是一个代理全部 ACP 方法的通用网关。
 
-Rust 客户端示例：
+原 Bas RPC 客户端示例（bast 暂继续使用）：
 
 ```rust,no_run
 use bas::{acp, service::Client};

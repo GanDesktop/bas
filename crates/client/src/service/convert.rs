@@ -130,7 +130,7 @@ impl TryFrom<&model::SessionSnapshot> for pb::Session {
             agent: meta.agent.to_string(),
             title: meta.title.clone(),
             owner: Some((&meta.owner).into()),
-            subagents: Some(pb::AcpPayload {
+            subagents: Some(pb::SubagentSnapshot {
                 json: serde_json::to_vec(&meta.subagents)?,
             }),
             additional_directories: meta
@@ -464,7 +464,7 @@ impl From<&model::Event> for pb::Event {
                 config,
                 subagents,
             } => Kind::WorkspaceChanged(pb::WorkspaceChanged {
-                subagents: Some(pb::AcpPayload {
+                subagents: Some(pb::SubagentSnapshot {
                     json: serde_json::to_vec(subagents).expect("subagent snapshot serializes"),
                 }),
                 additional_directories: directories
@@ -561,5 +561,20 @@ impl TryFrom<pb::Event> for model::Event {
                 },
             },
         })
+    }
+}
+
+impl pb::TerminalInvocation {
+    /// # Errors
+    /// Rejects an invalid Bas terminal invocation.
+    pub fn decode(&self) -> Result<crate::authentication::Invocation, Error> {
+        Ok(serde_json::from_slice(&self.json)?)
+    }
+}
+impl pb::SubagentSnapshot {
+    /// # Errors
+    /// Rejects an invalid Bas subagent snapshot.
+    pub fn decode(&self) -> Result<model::Subagents, Error> {
+        Ok(serde_json::from_slice(&self.json)?)
     }
 }

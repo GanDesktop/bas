@@ -11,9 +11,41 @@ pub use history::*;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A connected `bas.v1.Bas` client.
-pub type Client = pb::bas_client::BasClient<Channel>;
+#[derive(Clone, Debug)]
+pub struct Client {
+    rpc: pb::bas_client::BasClient<Channel>,
+    channel: Channel,
+}
+impl std::ops::Deref for Client {
+    type Target = pb::bas_client::BasClient<Channel>;
+    fn deref(&self) -> &Self::Target {
+        &self.rpc
+    }
+}
+impl std::ops::DerefMut for Client {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.rpc
+    }
+}
 
 impl Client {
+    pub fn new(channel: Channel) -> Self {
+        Self {
+            rpc: pb::bas_client::BasClient::new(channel.clone()),
+            channel,
+        }
+    }
+    /// # Errors
+    /// Returns an invalid endpoint or connection error.
+    pub async fn connect(destination: String) -> Result<Self, tonic::transport::Error> {
+        Ok(Self::new(
+            Endpoint::from_shared(destination)?.connect().await?,
+        ))
+    }
+    pub fn channel(&self) -> Channel {
+        self.channel.clone()
+    }
+
     /// Answers a live tool approval with a canonical ACP outcome.
     /// # Errors
     /// Returns an error if the request expired, the option is invalid, or transport fails.
@@ -34,10 +66,13 @@ impl Client {
     }
 
     /// Applies payload limits and accepts compressed responses for large histories.
-    pub fn with_payload_limit(self) -> Self {
-        self.accept_compressed(tonic::codec::CompressionEncoding::Gzip)
+    pub fn with_payload_limit(mut self) -> Self {
+        self.rpc = self
+            .rpc
+            .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
             .max_decoding_message_size(super::MAX_MESSAGE_SIZE)
-            .max_encoding_message_size(super::MAX_MESSAGE_SIZE)
+            .max_encoding_message_size(super::MAX_MESSAGE_SIZE);
+        self
     }
 
     /// Submit once using a client-owned identity. This method never resends.
@@ -141,7 +176,7 @@ impl Client {
     pub async fn connect_at(address: SocketAddr) -> Result<Self, tonic::transport::Error> {
         let endpoint =
             Endpoint::from_shared(format!("http://{address}"))?.connect_timeout(CONNECT_TIMEOUT);
-        Ok(Client::connect(endpoint).await?.with_payload_limit())
+        Ok(Client::new(endpoint.connect().await?).with_payload_limit())
     }
 
     /// Connects using local IPC or an explicitly selected plaintext TCP endpoint.

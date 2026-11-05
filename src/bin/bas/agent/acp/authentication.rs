@@ -285,7 +285,9 @@ pub async fn interactive(
                 *interaction.terminal.lock().await = Some(send);
                 interaction
                     .event(pb::authentication_event::Kind::Terminal(
-                        (&serde_json::to_value(invocation)?).into(),
+                        pb::TerminalInvocation {
+                            json: serde_json::to_vec(&invocation)?,
+                        },
                     ))
                     .await?;
                 let exit = receive.await.map_err(|_| Error::Cancelled)?;

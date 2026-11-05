@@ -80,6 +80,9 @@ async fn run(config: Config) -> Result<()> {
     let mut bound = Vec::new();
     let stopping = tokio_util::sync::CancellationToken::new();
     let tls = config.tls.as_ref().map(|tls| tls.load()).transpose()?;
+    let service = service::Service::new(Arc::clone(&registry)).with_manager(Arc::clone(&manager));
+    let acp = bas::service::acp::server::Gateway::new(service.clone())
+        .with_authentication(service.clone());
     for target in &config.listen {
         let mut server = tonic::transport::Server::builder();
         let bind_target = match target {
@@ -103,11 +106,8 @@ async fn run(config: Config) -> Result<()> {
         });
         listeners.push(
             server
-                .add_service(
-                    service::Service::new(Arc::clone(&registry))
-                        .with_manager(Arc::clone(&manager))
-                        .into_server(),
-                )
+                .add_service(service.clone().into_server())
+                .add_service(acp.clone().into_server())
                 .serve_with_incoming_shutdown(
                     listener.incoming(),
                     stopping.clone().cancelled_owned(),

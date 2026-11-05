@@ -94,7 +94,7 @@ impl Fixture {
 
 #[tokio::test]
 async fn logout_negotiates_capability_once_without_creating_or_deleting_sessions() {
-    let mut fixture = Fixture::new("supported").await;
+    let fixture = Fixture::new("supported").await;
     fixture
         .registry
         .create(CreateRequest {
@@ -108,6 +108,7 @@ async fn logout_negotiates_capability_once_without_creating_or_deleting_sessions
     let before = fixture.registry.list().await;
     fixture
         .client
+        .clone()
         .logout_agent(fixture.request())
         .await
         .expect("logout");
@@ -118,10 +119,10 @@ async fn logout_negotiates_capability_once_without_creating_or_deleting_sessions
 
 #[tokio::test]
 async fn logout_timeout_has_unknown_outcome_and_does_not_retry() {
-    let mut fixture = Fixture::new("hang").await;
+    let fixture = Fixture::new("hang").await;
     let error = tokio::time::timeout(
         Duration::from_secs(5),
-        fixture.client.logout_agent(fixture.request()),
+        fixture.client.clone().logout_agent(fixture.request()),
     )
     .await
     .expect("bounded RPC")

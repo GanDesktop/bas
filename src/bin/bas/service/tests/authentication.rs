@@ -45,9 +45,13 @@ async fn server(
         .await
         .expect("listener");
     let address = listener.local_addr().expect("address");
+    let service = Service::new(registry.clone());
+    let gateway = bas::service::acp::server::Gateway::new(service.clone())
+        .with_authentication(service.clone());
     let task = tokio::spawn(
         tonic::transport::Server::builder()
-            .add_service(Service::new(registry.clone()).into_server())
+            .add_service(service.into_server())
+            .add_service(gateway.into_server())
             .serve_with_incoming(TcpListenerStream::new(listener)),
     );
     let client = Client::connect(format!("http://{address}"))
@@ -373,4 +377,151 @@ fn assert_authentication_failure(error: &tonic::Status, stage: &str, code: i32, 
             "RPC data field leaked: {omitted}"
         );
     }
+}
+
+#[tokio::test]
+async fn sdk_authentication_routes_native_elicitation_without_bas_envelopes() {
+    use bas::service::acp::{Incoming, Link, prepare, sdk};
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let directory = tempfile::tempdir().expect("directory");
+        let spec = spec(&directory);
+        let (registry, client, server) = server(spec.clone()).await;
+        let Some(pb::authentication_input::Kind::Start(authentication)) = start(&spec).kind else {
+            panic!("start")
+        };
+        let prepared = prepare(
+            client.channel(),
+            pb::PrepareAcpRequest {
+                target: Some(pb::prepare_acp_request::Target::Authentication(
+                    authentication,
+                )),
+                interactive: true,
+            },
+        )
+        .await
+        .expect("prepare");
+        let (link, mut incoming) = Link::open(prepared).await.expect("open");
+        let authenticate = link
+            .peer
+            .prepare_request(bas::acp::AuthenticateRequest::new("login"));
+        let authenticate_id = serde_json::to_value(authenticate.id()).expect("request ID");
+        link.peer
+            .spawn(async move {
+                while let Some(message) = incoming.recv().await {
+                    if let Incoming::Request(request, responder) = message {
+                        assert_eq!(request.method, "elicitation/create");
+                        assert_eq!(request.params["mode"], "form");
+                        assert!(request.params.get("kind").is_none());
+                        assert_eq!(request.params["requestId"], authenticate_id);
+                        responder.respond_with_result(Ok(
+                            serde_json::json!({"action":"accept","content":{"project":"atlas"}}),
+                        ))?;
+                    }
+                }
+                Ok(())
+            })
+            .expect("callback handler");
+        link.peer
+            .send_request(
+                bas::acp::InitializeRequest::new(sdk::schema::ProtocolVersion::V1)
+                    .client_capabilities(
+                        bas::acp::ClientCapabilities::new().elicitation(
+                            bas::acp::ElicitationCapabilities::new()
+                                .form(bas::acp::ElicitationFormCapabilities::new()),
+                        ),
+                    ),
+            )
+            .block_task()
+            .await
+            .expect("initialize");
+        authenticate.block_task().await.expect("authenticate");
+        assert!(registry.list().await.is_empty());
+        drop(link);
+        registry.shutdown().await;
+        server.abort();
+    })
+    .await
+    .expect("authentication deadline");
+}
+
+#[tokio::test]
+async fn sdk_authentication_keeps_terminal_plans_on_bas_auxiliary_control() {
+    use bas::service::acp::{Link, prepare, sdk};
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let directory = tempfile::tempdir().expect("directory");
+        let mut spec = spec(&directory);
+        spec.env.insert(
+            "BAS_FIXTURE_MODE".into(),
+            "agent_auth_terminal_ready".into(),
+        );
+        let (registry, client, server) = server(spec.clone()).await;
+        let Some(pb::authentication_input::Kind::Start(authentication)) = start(&spec).kind else {
+            panic!("start")
+        };
+        let prepared = prepare(
+            client.channel(),
+            pb::PrepareAcpRequest {
+                target: Some(pb::prepare_acp_request::Target::Authentication(
+                    authentication,
+                )),
+                interactive: true,
+            },
+        )
+        .await
+        .expect("prepare");
+        let (link, mut incoming) = Link::open(prepared).await.expect("open");
+        let mut control = link.prepared.control.clone();
+        let mut auxiliary = control
+            .watch_auxiliary(pb::AcpConnectionRequest {
+                connection: link.prepared.id.clone(),
+            })
+            .await
+            .expect("auxiliary")
+            .into_inner();
+        link.peer
+            .send_request(bas::acp::InitializeRequest::new(
+                sdk::schema::ProtocolVersion::V1,
+            ))
+            .block_task()
+            .await
+            .expect("initialize");
+        let authenticate = link
+            .peer
+            .send_request(bas::acp::AuthenticateRequest::new("login"))
+            .block_task();
+        let terminal = async {
+            loop {
+                let event = auxiliary
+                    .message()
+                    .await
+                    .expect("control event")
+                    .expect("live control");
+                if let Some(pb::acp_auxiliary_event::Kind::Terminal(payload)) = event.kind {
+                    let invocation = payload.decode().expect("Bas terminal plan");
+                    assert_eq!(invocation.args.last().map(String::as_str), Some("login"));
+                    std::fs::write(directory.path().join("pid.ready"), "ready")
+                        .expect("terminal login completed");
+                    control
+                        .terminal_result(pb::AcpTerminalResultRequest {
+                            connection: link.prepared.id.clone(),
+                            exit_code: 0,
+                        })
+                        .await
+                        .expect("exit status");
+                    break;
+                }
+            }
+        };
+        let (response, ()) = tokio::join!(authenticate, terminal);
+        response.expect("standard authenticate response");
+        assert!(
+            incoming.try_recv().is_err(),
+            "execution plans never enter ACP requests or notifications"
+        );
+        drop(link);
+        registry.shutdown().await;
+        server.abort();
+    })
+    .await
+    .expect("authentication deadline");
 }

@@ -111,12 +111,13 @@ impl Fixture {
 async fn additional_directories_reload_same_session_and_survive_restart_without_duplicate_history()
 {
     for mode in ["load", "resume"] {
-        let mut fixture = Fixture::new(mode).await;
+        let fixture = Fixture::new(mode).await;
         let root = tempfile::tempdir().expect("extra root");
         let path = root.path().to_str().expect("UTF-8").to_owned();
         let before = fixture.session.meta();
         let snapshot: bas::model::SessionSnapshot = fixture
             .client
+            .clone()
             .set_session_directories(fixture.request(vec![path.clone(), path.clone()]))
             .await
             .expect("reload")

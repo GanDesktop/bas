@@ -219,7 +219,7 @@ message AuthenticationEvent {
     PendingElicitation elicitation = 2;
     AcpPayload elicitation_complete = 3;
     // Serialized bas::authentication::Invocation, prepared by the daemon.
-    AcpPayload terminal = 4;
+    TerminalInvocation terminal = 4;
     string progress = 5;
     // Agent cancelled this live elicitation/create request.
     string elicitation_cancelled = 6;
@@ -318,7 +318,7 @@ message Session {
   SessionRuntime runtime = 17;
   repeated string additional_directories = 18;
   // Bas Subagents snapshot with native ACP states and per-child capabilities.
-  AcpPayload subagents = 19;
+  SubagentSnapshot subagents = 19;
 }
 
 message SetSessionDirectoriesRequest {
@@ -329,7 +329,7 @@ message SetSessionDirectoriesRequest {
 message WorkspaceChanged {
   repeated string additional_directories = 1;
   AcpPayload acp = 2;
-  AcpPayload subagents = 3;
+  SubagentSnapshot subagents = 3;
 }
 
 message CreateSessionRequest {
@@ -609,4 +609,48 @@ message LoadHistoryWindowAtResponse {
   // Next logical page start, for a subsequent LoadHistoryWindowAt request.
   // Absent only when this slice reaches its snapshot high-water cursor.
   optional uint64 after = 2;
+}
+
+// Bas-owned data never uses AcpPayload.
+message TerminalInvocation { bytes json = 1; }
+message SubagentSnapshot { bytes json = 1; }
+
+// Connection preparation and durable execution remain Bas operations.
+service AcpTransport {
+  rpc Prepare(PrepareAcpRequest) returns (PreparedAcpConnection);
+  // The prepared connection ID is supplied in bas-acp-connection metadata.
+  // Every frame contains only a complete ACP JSON-RPC message.
+  rpc Open(stream AcpMessage) returns (stream AcpMessage);
+  rpc BindSubmission(BindAcpSubmissionRequest) returns (AcpControlResponse);
+  rpc SubmissionState(BindAcpSubmissionRequest) returns (PromptSubmissionResponse);
+  rpc WatchAuxiliary(AcpConnectionRequest) returns (stream AcpAuxiliaryEvent);
+  rpc TerminalResult(AcpTerminalResultRequest) returns (AcpControlResponse);
+}
+message PrepareAcpRequest {
+  oneof target {
+    string session = 1;
+    AuthenticateAgentRequest authentication = 2;
+  }
+  // Interactive connections own the session's approval/elicitation callbacks.
+  bool interactive = 3;
+}
+message PreparedAcpConnection { string id = 1; }
+message AcpMessage { bytes json = 1; }
+message AcpConnectionRequest { string connection = 1; }
+message BindAcpSubmissionRequest {
+  string connection = 1;
+  // JSON representation of the ACP request ID, not part of its params.
+  string request_id = 2;
+  string turn = 3;
+}
+message AcpTerminalResultRequest {
+  string connection = 1;
+  int32 exit_code = 2;
+}
+message AcpControlResponse {}
+message AcpAuxiliaryEvent {
+  oneof kind {
+    TerminalInvocation terminal = 1;
+    string progress = 2;
+  }
 }

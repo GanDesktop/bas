@@ -4,6 +4,7 @@
 //! [`pb::bas_client`]. ACP requests and updates use SDK JSON inside
 //! [`pb::AcpPayload`]; protobuf defines daemon management and replay envelopes.
 
+pub mod acp;
 mod client;
 mod convert;
 mod defaults;

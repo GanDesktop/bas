@@ -1,5 +1,6 @@
 use std::{num::NonZeroUsize, sync::Arc, time::Duration};
 
+mod acp;
 mod archive;
 #[cfg(unix)]
 mod authentication;
