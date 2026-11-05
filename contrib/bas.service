@@ -19,7 +19,6 @@ RuntimeDirectory=bas
 RuntimeDirectoryMode=0700
 Environment=BAS_AGENTS=embedded
 Environment=BAS_LOG_BACKEND=journald
-Environment=BAS_NOTIFY=auto
 
 # The service reads and writes files on the user's behalf and can spawn agents,
 # so it must not run as root unless the operator really wants that.

@@ -28,7 +28,7 @@ async fn live_notices_leave_memory_and_durable_history_and_cursors_unchanged() {
                 .expect("save session");
         }
         let limits = Limits::default();
-        let session = Session::with_storage(meta, limits, None, storage.clone(), true);
+        let session = Session::with_storage(meta, limits, storage.clone(), true);
         let (updates, inbox) = mpsc::channel(limits.live_capacity.get());
         session.listen(inbox);
         session

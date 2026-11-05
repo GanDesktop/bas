@@ -66,7 +66,6 @@ async fn pending_session(limits: Limits) -> Arc<Session> {
     let session = Session::new(
         SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current()),
         limits,
-        None,
     );
     let (updates, inbox) = mpsc::channel(limits.live_capacity.get());
     session.listen(inbox);
@@ -108,7 +107,6 @@ async fn startup_overlay_survives_content_eviction_before_ready() {
             history_capacity: NonZeroUsize::new(1).expect("one event"),
             ..Limits::default()
         },
-        None,
     );
     session
         .apply(Update::Acp(

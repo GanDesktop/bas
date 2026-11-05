@@ -78,7 +78,6 @@ async fn archival_is_metadata_for_starting_stopped_and_failed_sessions() {
         let session = Session::new(
             SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current()),
             Limits::default(),
-            None,
         );
         match status {
             SessionStatus::Stopped => session.shutdown().await,

@@ -48,11 +48,10 @@ pub(super) async fn edit_configuration(client: &mut Client, path: &std::path::Pa
         saved
     );
     assert_eq!(
-        bas::config::Store::at(path.to_owned())
+        bas::config::DaemonStore::at(path.to_owned())
             .load()
             .expect("persisted document")
             .settings
-            .daemon
             .agents,
         agents
     );
@@ -152,14 +151,7 @@ async fn tcp_configuration_edit_persists_and_conflicts_do_not_overwrite() {
 #[tokio::test]
 async fn fixed_catalog_configuration_is_read_only() {
     let mut command = command();
-    command.args([
-        "--listen",
-        "127.0.0.1:0",
-        "--notify",
-        "never",
-        "--log-backend",
-        "stdout",
-    ]);
+    command.args(["--listen", "127.0.0.1:0", "--log-backend", "stdout"]);
     let mut daemon = Daemon::start(command).await;
     let error = daemon
         .client
@@ -271,14 +263,7 @@ async fn start(directory: &std::path::Path, fixture: &Fixture) -> Daemon {
             "BAS_ACP_REGISTRY_URL",
             format!("http://{}/registry.json", fixture.address),
         )
-        .args([
-            "--listen",
-            "127.0.0.1:0",
-            "--notify",
-            "never",
-            "--log-backend",
-            "stdout",
-        ]);
+        .args(["--listen", "127.0.0.1:0", "--log-backend", "stdout"]);
     Daemon::start(command).await
 }
 
@@ -327,14 +312,7 @@ async fn start_profile(
         )
         .arg("--settings-file")
         .arg(path)
-        .args([
-            "--listen",
-            "127.0.0.1:0",
-            "--notify",
-            "never",
-            "--log-backend",
-            "stdout",
-        ]);
+        .args(["--listen", "127.0.0.1:0", "--log-backend", "stdout"]);
     Daemon::start(command).await
 }
 
@@ -530,14 +508,10 @@ async fn discovery_install_update_remove_and_offline_cache_preserve_sessions() {
         ))
         .await
         .expect("existing process continues after update and removal");
-    let saved = bas::config::Store::at(directory.path().join("settings.json"))
+    let saved = bas::config::DaemonStore::at(directory.path().join("settings.json"))
         .load()
         .expect("saved settings");
-    assert_eq!(
-        saved.settings.appearance.theme_source,
-        bas::config::appearance::ThemeSource::Builtin
-    );
-    assert_eq!(saved.settings.daemon.agents.len(), 2);
+    assert_eq!(saved.settings.agents.len(), 2);
     assert!(
         updated.command.expect("updated program").program.is_file(),
         "removal retains version directories"

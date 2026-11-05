@@ -1,54 +1,32 @@
 # 测试环境
 
-日常代码测试运行在开发环境中。Nix 依赖由 `flake.lock` 固定，Rust 依赖由
-`Cargo.lock` 固定。
+Nix 依赖由 `flake.lock` 固定，Rust 依赖由 `Cargo.lock` 固定。
 
-## 日常测试
+## Rust 测试
 
-安装脚本的离线回归测试使用临时目录和模拟 Nix，不安装包或操作真实服务：
+```sh
+nix develop -c cargo fmt --all -- --check
+nix develop -c cargo test --all-targets --locked
+nix develop -c cargo clippy --all-targets --locked -- -D warnings
+```
+
+覆盖共享模型、配置、会话存储、ACP 后端、终端输出、gRPC、进程生命周期和本地传输。
+测试使用 embedded echo 与受控 ACP fixture，不读取凭据或调用真实模型。
+CI 也在 macOS 和 Windows 检查原生服务、传输和后端安装生命周期。
+
+## 安装与源码快照
 
 ```sh
 python3 tests/install_bas.py -v
-python3 tests/install_basg_dev.py -v
-```
-
-真实 Nix source 回归验证 metadata 的锁定 URL round-trip 和源码过滤，
-覆盖不含 vendor 源码的 package source 和 Git 宏依赖锁定；使用临时目录，不修改系统 profile：
-
-```sh
 python3 tests/nix_source.py -v
 ```
 
-本机 GUI 开发见 [本机启动](gui.md#本机启动)。外部 Agent 通过 ACP Registry
-按需安装；以下自动测试使用 embedded echo 和受控 ACP fixture，不读取凭据或调用真实模型。
-
-无需初始化子模块，在仓库根目录运行：
-
-```sh
-nix develop -c cargo test --all-targets
-```
-
-已经进入开发 shell 时可以直接运行 `cargo test --all-targets`。这一层包括
-Rust 单元测试、gRPC 和进程集成测试。
-
-默认目标不包含可选的 GUI。完整本地验收还需运行：
-
-```sh
-nix develop .#gui -c cargo fmt --all -- --check
-nix develop .#gui -c cargo build --all-targets --features gui-tests --locked
-nix develop .#gui -c cargo test --features gui-tests --bin basg --locked
-nix develop .#gui -c cargo clippy --all-targets --features gui-tests --locked -- -D warnings
-```
-
-CI 分别执行默认测试与 headless GUI 测试，不读取 `.env`，也不调用真实模型。
-Windows job 额外执行 `cargo test --bin bast command::agents::terminal --locked`：
-真实 console 用隔离子进程创建，覆盖取消后再次输入、Unicode、进度输出和模式恢复，
-父测试有退出期限；交叉编译不能代替这项 Windows 运行验证。
-状态回归通过受控事件顺序和 ACP fixture 验证：设置响应与通知的提交顺序、
-启动期间历史淘汰、快照版本合并、发送回执与事件交错以及队列编辑保序。
-这些测试不使用固定等待时间推测操作是否完成。
+安装脚本测试使用临时目录与模拟 Nix；源码快照测试需要真实 Nix，检查锁定 URI 往返和过滤规则。
+这些测试不安装软件或操作真实服务。
 
 ## 系统测试
 
-QEMU/NixOS 系统测试目前不在仓库中，后续统一补全。当前的系统级覆盖由
-`cargo test --all-targets` 中的进程集成测试和真实 gRPC 测试承担。
+QEMU/NixOS 系统测试目前不在仓库中。系统级覆盖由 Rust 进程集成测试和真实 gRPC 测试承担。
+
+Windows CI 额外运行 `cargo test --bin bast command::agents::terminal --locked`，
+通过隔离 console 子进程检查取消后再次输入、Unicode、进度输出与控制台模式恢复。

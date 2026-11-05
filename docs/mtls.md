@@ -104,51 +104,12 @@ Plaintext TCP is unauthenticated access to the same environment: exposing a plai
 listener to untrusted peers bypasses the protection of the TLS listener. Choose
 bind addresses and network access deliberately; Bas does not configure firewalls.
 
-## Saved GUI connections
-
-In Settings → Frontend → Service connections, select **mTLS** and enter the address,
-server CA file, client certificate file, private key file, and optional expected
-server name. These fields are paths only; never paste a private key. Save, then
-explicitly select the profile to change management context or open its chat window.
-BasG's `--server` override supplies an endpoint only; use a saved profile for mTLS.
-Invalid saved connection configuration stops GUI startup rather than connecting
-to a default local service. Correct the configuration (or deliberately supply a
-different explicit `--server`); unreadable TLS files produce a connection error.
-
-```json
-{
-  "frontend": {
-    "selected": "work",
-    "connections": [{
-      "id": "work",
-      "name": "Work server",
-      "target": "mtls://bas.example.internal:7338",
-      "tls": {
-        "ca": "/private/client/ca.pem",
-        "certificate": "/private/client/client.pem",
-        "private_key": "/private/client/client.key"
-      }
-    }]
-  }
-}
-```
-
-The optional `tls.server_name` has the same meaning as the CLI flag. Existing
-profiles without `tls` remain valid for IPC/plain TCP. All programs reading a
-settings file containing these new fields must support this version.
-
-Existing chat/authentication windows and service caches retain their own complete
-connection options. Selecting another profile, including different credential
-paths for the same address, does not borrow that profile's credentials midway
-through an existing request.
-
 ## Rotation, reload, and revocation limits
 
 - Daemon certificates, keys and client CA trust load at startup. Restart the daemon
   after changing them; Agent catalog hot reload does **not** reload TLS files.
 - Each client channel loads credentials when constructed and retains them on
-  reconnect. Some GUI operations create new channels and may read updated files,
-  while existing chat channels retain the previous material. Restart BasG after
+  reconnect. New client channels may read updated files while existing channels retain the previous material. Reconnect after
   rotation for a consistent identity; each new `bast` invocation loads files anew.
 - Cache/window identity includes file references, not a content fingerprint.
   Overwriting a file does not automatically invalidate cached frontend state.

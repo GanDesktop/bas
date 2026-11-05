@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use super::{Notify, Storage, parse_agents};
+use super::{Storage, parse_agents};
 
 #[test]
 fn agent_overrides_still_load_and_watch_server_policy() {
@@ -47,7 +47,6 @@ fn defaults_are_suitable_for_a_local_daemon() {
     let config = super::Config::default();
 
     assert_eq!(config.listen, vec![bas::service::Target::Local]);
-    assert_eq!(config.notify, Notify::Auto);
     assert_eq!(config.storage, Storage::Localdb);
     assert_eq!(config.localdb_path, None);
     assert_eq!(

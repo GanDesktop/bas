@@ -4,13 +4,6 @@ use super::*;
 mod tests;
 
 impl Store {
-    /// Frontend preferences never decode or validate backend-owned fields.
-    pub(super) fn frontend(path: Option<PathBuf>) -> Self {
-        let mut store = Self::new(path);
-        store.scope = Scope::Frontend;
-        store
-    }
-
     /// Backend configuration defaults to daemon.json, with read-only legacy import.
     pub(super) fn daemon(path: Option<PathBuf>) -> Self {
         let mut store = match path {
@@ -30,16 +23,6 @@ impl Store {
     fn decode_scoped(&self, path: &Path, raw: serde_json::Value) -> Result<Settings, Error> {
         let mut settings = Settings::default();
         match self.scope {
-            Scope::Frontend => {
-                let mut owned = raw;
-                if let Some(object) = owned.as_object_mut() {
-                    object.remove("daemon");
-                }
-                settings = serde_json::from_value(owned).map_err(|source| Error::Json {
-                    path: path.into(),
-                    source,
-                })?;
-            }
             Scope::Daemon => {
                 let owned = if legacy_envelope(&raw) {
                     raw.get("daemon")
@@ -71,14 +54,6 @@ impl Store {
             settings = self.decode_scoped(&self.path, raw.clone())?;
         } else if self.import_legacy {
             match self.scope {
-                Scope::Frontend => {
-                    let path = self.parent().join("appearance.json");
-                    let bytes = read_optional(&path)?;
-                    if let Some(bytes) = &bytes {
-                        settings.appearance = parse(&path, bytes)?;
-                    }
-                    snapshot.files.push((path, bytes));
-                }
                 Scope::Daemon => {
                     let path = self.parent().join("settings.json");
                     let bytes = read_optional(&path)?;
@@ -120,16 +95,6 @@ impl Store {
     pub(super) fn validate_scoped(&self, settings: &Settings) -> Result<(), Error> {
         match self.scope {
             Scope::Unified => validate(&self.path, settings),
-            Scope::Frontend => {
-                settings
-                    .appearance
-                    .validate()
-                    .map_err(|e| invalid(&self.path, e))?;
-                settings
-                    .frontend
-                    .validate()
-                    .map_err(|e| invalid(&self.path, e))
-            }
             Scope::Daemon => settings
                 .daemon
                 .validate()
@@ -150,14 +115,6 @@ impl Store {
         };
         match self.scope {
             Scope::Unified => serialize(serde_json::to_value(settings)),
-            Scope::Frontend => {
-                if raw.is_null() {
-                    raw = serde_json::json!({});
-                }
-                raw["appearance"] = serialize(serde_json::to_value(&settings.appearance))?;
-                raw["frontend"] = serialize(serde_json::to_value(&settings.frontend))?;
-                Ok(raw)
-            }
             Scope::Daemon => {
                 let daemon = serialize(serde_json::to_value(&settings.daemon))?;
                 if legacy_envelope(&raw) {

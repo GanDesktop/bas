@@ -164,8 +164,7 @@ async fn storage_retry_recovers_one_runtime_without_resending_accepted_work() {
             .create(meta.clone(), Some(ResumeData::acp("original")))
             .await
             .expect("record");
-        let session =
-            Session::with_storage(meta, Limits::default(), None, Some(storage.clone()), true);
+        let session = Session::with_storage(meta, Limits::default(), Some(storage.clone()), true);
         session.remember_backend_id("original".into());
         let (updates, inbox) = mpsc::channel(16);
         session.listen(inbox);
@@ -303,14 +302,7 @@ async fn every_commit_boundary_latches_failure_without_rewriting_committed_state
         let storage = ControlledStore::new();
         let meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
         storage.create(meta.clone(), None).await.expect("create");
-        let (completions, mut completed) = mpsc::channel(4);
-        let session = Session::with_storage(
-            meta,
-            Limits::default(),
-            Some(completions),
-            Some(storage.clone()),
-            true,
-        );
+        let session = Session::with_storage(meta, Limits::default(), Some(storage.clone()), true);
         let (updates, inbox) = mpsc::channel(16);
         session.listen(inbox);
         let alive = Arc::new(());
@@ -427,7 +419,6 @@ async fn every_commit_boundary_latches_failure_without_rewriting_committed_state
         assert_eq!(failed.runtime.id, before.runtime.id);
         assert_eq!(failed.status(), SessionStatus::Failed);
         assert_eq!(failed.active_turn(), None);
-        assert!(completed.try_recv().is_err(), "no fictional ACP completion");
         assert!(updates.is_closed(), "backend updates stopped");
         assert!(
             weak_agent.upgrade().is_none(),

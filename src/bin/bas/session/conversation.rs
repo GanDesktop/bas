@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     future::Future,
-    sync::{Arc, Mutex, MutexGuard, Weak},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use bas::acp;
@@ -26,19 +26,6 @@ mod submission;
 mod tests;
 pub use lifecycle::BackendUse;
 pub use submission::SubmissionError;
-
-/// A detached snapshot; notification delivery never retains the session.
-#[derive(Clone, Debug)]
-pub struct Completion {
-    pub session: SessionMeta,
-    pub outcome: CompletionOutcome,
-}
-
-#[derive(Clone, Debug)]
-pub enum CompletionOutcome {
-    Native(PromptResult),
-    Interrupted(InterruptionReason),
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
@@ -66,17 +53,6 @@ pub struct Session {
     pub(super) backend_id: std::sync::OnceLock<String>,
 }
 
-/// A connected foreground viewer; it never retains or stops the backend.
-pub struct Foreground(Weak<Session>);
-
-impl Drop for Foreground {
-    fn drop(&mut self) {
-        if let Some(session) = self.0.upgrade() {
-            session.lock().foreground_viewers -= 1;
-        }
-    }
-}
-
 /// All mutations and broadcasts share one lock. Backend methods only enqueue work.
 struct State {
     meta: SessionMeta,
@@ -88,8 +64,6 @@ struct State {
     active: Option<TurnId>,
     agent: Option<Box<dyn Agent>>,
     events: Option<broadcast::Sender<Event>>,
-    completions: Option<mpsc::Sender<Completion>>,
-    foreground_viewers: usize,
     startup_config: Option<acp::ConfigOptionUpdate>,
     startup_mode: Option<acp::CurrentModeUpdate>,
     storage: Option<Arc<dyn Storage>>,
@@ -107,18 +81,13 @@ struct State {
 
 impl Session {
     #[cfg(test)]
-    pub(super) fn new(
-        meta: SessionMeta,
-        limits: Limits,
-        completions: Option<mpsc::Sender<Completion>>,
-    ) -> Arc<Self> {
-        Self::with_storage(meta, limits, completions, None, true)
+    pub(super) fn new(meta: SessionMeta, limits: Limits) -> Arc<Self> {
+        Self::with_storage(meta, limits, None, true)
     }
 
     pub(super) fn with_storage(
         meta: SessionMeta,
         limits: Limits,
-        completions: Option<mpsc::Sender<Completion>>,
         storage: Option<Arc<dyn Storage>>,
         restored: bool,
     ) -> Arc<Self> {
@@ -138,8 +107,6 @@ impl Session {
                 active: None,
                 agent: None,
                 events,
-                completions,
-                foreground_viewers: 0,
                 startup_config: None,
                 startup_mode: None,
                 storage,
@@ -383,11 +350,6 @@ impl Session {
 
     pub fn id(&self) -> SessionId {
         self.lock().meta.id
-    }
-
-    pub fn foreground(self: &Arc<Self>) -> Foreground {
-        self.lock().foreground_viewers += 1;
-        Foreground(Arc::downgrade(self))
     }
 
     pub fn meta(&self) -> SessionMeta {
@@ -1178,12 +1140,9 @@ impl Session {
     async fn finish_locked(&self, result: PromptResult) -> Result<(), SessionError> {
         let active = self.lock().active;
         if let Some(turn) = active {
-            self.publish_locked([EventKind::TurnFinished {
-                turn,
-                result: result.clone(),
-            }])
-            .await?;
-            self.complete_locked(CompletionOutcome::Native(result));
+            self.publish_locked([EventKind::TurnFinished { turn, result }])
+                .await?;
+            self.lock().active = None;
         }
         Ok(())
     }
@@ -1196,33 +1155,14 @@ impl Session {
         let active = self.lock().active;
         let mut events = Vec::new();
         if let Some(turn) = active {
-            events.push(EventKind::TurnInterrupted {
-                turn,
-                reason: reason.clone(),
-            });
+            events.push(EventKind::TurnInterrupted { turn, reason });
         }
         events.extend(terminal);
         self.publish_locked(events).await?;
         if active.is_some() {
-            self.complete_locked(CompletionOutcome::Interrupted(reason));
+            self.lock().active = None;
         }
         Ok(())
-    }
-
-    fn complete_locked(&self, outcome: CompletionOutcome) {
-        let mut state = self.lock();
-        state.active = None;
-        if let Some(completions) = &state.completions
-            && state.foreground_viewers == 0
-        {
-            let completion = Completion {
-                session: state.meta.clone(),
-                outcome,
-            };
-            if let Err(error) = completions.try_send(completion) {
-                tracing::warn!(%error, session = %state.meta.id, "completion notification was not queued");
-            }
-        }
     }
 
     async fn fail_locked(&self, message: String) -> Result<(), SessionError> {

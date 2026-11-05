@@ -35,7 +35,6 @@ fn fixture() -> (tempfile::TempDir, Store) {
 fn broken_legacy_is_not_silently_discarded() {
     let (dir, store) = fixture();
     for (filename, value) in [
-        ("appearance.json", r#"{"ui_font_size":0}"#),
         ("agents.json", "[]"),
         (
             "agents.json",
@@ -73,7 +72,7 @@ fn busy_invalid_and_io_failures_preserve_document_and_file() {
         .expect("lock file");
     lock.try_lock().expect("hold lock");
     assert!(matches!(
-        store.save_appearance(&mut document, Appearance::default()),
+        store.save_agents(&mut document, vec![AgentSpec::embedded().into()]),
         Err(Error::Busy { .. })
     ));
     drop(lock);
@@ -81,7 +80,7 @@ fn busy_invalid_and_io_failures_preserve_document_and_file() {
     let original = fs::read(&store.path).expect("bytes");
     assert!(
         store
-            .save_appearance(&mut document, Appearance::default())
+            .save_agents(&mut document, vec![AgentSpec::embedded().into()])
             .is_err()
     );
     assert_eq!(fs::read(&store.path).expect("unchanged"), original);
@@ -107,7 +106,7 @@ fn managed_links_are_readable_but_never_overwritten_or_treated_as_missing() {
     assert!(matches!(store.load(), Err(Error::Io { .. })));
     assert!(
         store
-            .save_appearance(&mut document, Appearance::default())
+            .save_agents(&mut document, vec![AgentSpec::embedded().into()])
             .is_err()
     );
     fs::write(&target, "{}").expect("target");
@@ -126,7 +125,7 @@ fn managed_links_are_readable_but_never_overwritten_or_treated_as_missing() {
     let parent_store = Store::at(linked_dir.join("missing"));
     let mut parent_document = parent_store.load().expect("missing in linked directory");
     assert!(matches!(
-        parent_store.save_appearance(&mut parent_document, Appearance::default()),
+        parent_store.save_agents(&mut parent_document, vec![AgentSpec::embedded().into()]),
         Err(Error::Symlink { .. })
     ));
     assert!(!dir.path().join("missing").exists());

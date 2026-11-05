@@ -47,7 +47,6 @@ fn command() -> Command {
         "BAS_AGENTS_FILE",
         "BAS_SETTINGS_FILE",
         "BAS_DAEMON_SETTINGS_FILE",
-        "BAS_NOTIFY",
         "BAS_HISTORY",
         "BAS_STORAGE",
         "BAS_LOCALDB_PATH",
@@ -158,8 +157,6 @@ async fn auto_logging_rejects_inherited_nonmatching_journal_streams() {
         command.env("JOURNAL_STREAM", stream).args([
             "--listen",
             "127.0.0.1:0",
-            "--notify",
-            "never",
             "--log-backend",
             "auto",
         ]);
@@ -198,14 +195,7 @@ async fn daemon_discovers_the_user_agent_catalog() {
     command
         .env_remove("BAS_AGENTS")
         .env("XDG_CONFIG_HOME", directory.path())
-        .args([
-            "--listen",
-            "127.0.0.1:0",
-            "--notify",
-            "never",
-            "--log-backend",
-            "stdout",
-        ]);
+        .args(["--listen", "127.0.0.1:0", "--log-backend", "stdout"]);
     let mut daemon = Daemon::start(command).await;
     let agents = daemon
         .client
@@ -226,7 +216,6 @@ async fn cli_overrides_invalid_environment_and_shutdown_closes_live_streams() {
     for key in [
         "BAS_LISTEN",
         "BAS_AGENTS",
-        "BAS_NOTIFY",
         "BAS_HISTORY",
         "BAS_STORAGE",
         "BAS_BUFFER",
@@ -242,8 +231,6 @@ async fn cli_overrides_invalid_environment_and_shutdown_closes_live_streams() {
         "127.0.0.1:0",
         "--agents",
         "embedded",
-        "--notify",
-        "never",
         "--history",
         "100",
         "--storage",
@@ -312,37 +299,4 @@ async fn zero_capacities_and_empty_catalog_are_rejected() {
             .expect("daemon command");
         assert!(!output.status.success());
     }
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn required_notifications_fail_startup_while_auto_allows_headless_use() {
-    let mut required = command();
-    required
-        .env(
-            "DBUS_SESSION_BUS_ADDRESS",
-            "unix:path=/nonexistent/bas-test-bus",
-        )
-        .args(["--notify", "always", "--listen", "127.0.0.1:0"]);
-    let output = tokio::time::timeout(TIMEOUT, required.output())
-        .await
-        .expect("startup check completes")
-        .expect("daemon command");
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("required"));
-    let mut automatic = command();
-    automatic
-        .env(
-            "DBUS_SESSION_BUS_ADDRESS",
-            "unix:path=/nonexistent/bas-test-bus",
-        )
-        .args([
-            "--notify",
-            "auto",
-            "--listen",
-            "127.0.0.1:0",
-            "--log-backend",
-            "stdout",
-        ]);
-    Daemon::start(automatic).await.stop().await;
 }

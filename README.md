@@ -5,13 +5,12 @@ Bas 的目的是为linux系统（或者可能更多）在各种各样的环境�
 从旧版本升级前请阅读 [破坏性改名与手动迁移](docs/rename-migration.md)。
 
 可能有以下应用场景
-1. 比如在系统的装机阶段，或者在用户缺少python/node环境或者相关依赖的时候，有或者是缺少图形界面的时候，能够获得一定的AI能力。
-2. 有一个系统级别的ai唤起流程，可以通过桌面/语音唤起配置的agent provider来为用户完成任务。
+1. 比如在系统的装机阶段，或者在用户缺少python/node环境或者相关依赖的时候，或者在纯终端环境下，能够获得一定的AI能力。
+2. 有一个系统级别的ai唤起流程，可以通过终端调用配置的agent provider来为用户完成任务。
 
 项目分为如下几个部分
-1. 守护进程 Bas（`bas`），负责管理agent会话，提供服务供客户端使用，发出通知等交互内容
+1. 守护进程 Bas（`bas`），负责管理agent会话，提供服务供客户端使用
 2. 终端客户端 BasT（`bast`），能够通过命令行来管理 Bas 服务
-3. GUI/TUI客户端的配套。BasG（`basg`）使用 GPUI Kit 管理会话并与 Agent 对话；TUI 要保持简单与高度可用，能够在 tty 等环境下正常工作。（TUI 优先级不高）
 
 出于可用性的考虑，应当尽量减少动态库依赖。比如tls使用rustls, 使用musl静态链接编译等。
 
@@ -24,28 +23,16 @@ nix develop        # 进入开发 shell
 cargo check        # 在 shell 内构建
 ```
 
-无需初始化子模块。声明式 UI 宏 `gds-uim` 按上游推荐使用 Git dependency，
-固定提交 `94fe061888c45e137daff0d45c172c36bdb09882`；Cargo.lock 和 Nix 固定输出 hash
-锁定同一份原版源码，不在构建时追踪 `main`。
-来源、许可证状态和更新规则见 [源码依赖说明](vendor/README.md)。
-
-安装了 direnv 的用户，首次进入仓库执行一次 `direnv allow`，之后 `cd` 进目录会自动加载并缓存环境（需要 [nix-direnv](https://github.com/nix-community/nix-direnv)，`.envrc` 会自动引导）。
-
-shell 内提供 `rustc`、`cargo`、`clippy`、`rustfmt`、`rust-analyzer` 与 `rust-src`（供 rust-analyzer 解析标准库源码）。
-
-升级工具链：修改 `rust-toolchain.toml` 的 `channel`（`.envrc` 已 `watch_file` 该文件，direnv 会自动重载）；若该版本不在当前 rust-overlay 快照中，再运行 `nix flake update rust-overlay`。
 
 ## 测试
 
 ```sh
 nix develop -c cargo test --all-targets  # 日常 Rust 测试
-nix develop .#gui -c cargo test --features gui-tests --bin basg
 python3 tests/install_bas.py -v
 python3 tests/nix_source.py -v
 ```
 
 安装器和 Nix source 测试使用临时目录与模拟环境，不修改真实 profile。
-GUI 测试通过受控 ACP fixture 运行，不预装外部 Agent、不读取凭据，也不调用真实模型。
 
 QEMU/NixOS 系统测试目前不在仓库中，后续统一补全。
 
@@ -73,22 +60,18 @@ QEMU/NixOS 系统测试目前不在仓库中，后续统一补全。
   |   |   +--🦀registry.rs           会话注册表与后端目录
   |   +--🦀storage.rs                memory/localdb 会话存储
   |   +--🦀service.rs                基于会话注册表的 gRPC 服务端实现
-  |   +--🦀notify.rs                 D-Bus 桌面通知与完成监听
   |   +--🦀config.rs                 启动参数、环境变量与后端目录配置
   |   +--🦀system.rs                 进程生命周期与 systemd 集成
   |   +--🦀tracing.rs                日志后端
   +--🦀src/bin/bast/                 命令行管理工具
-  +--🦀src/bin/basg/                 GPUI Kit 图形客户端（gui feature）
 ```
 
-公共库导出 `bas::acp`（agent-client-protocol 3.3.0 的 v1 schema）、`bas::acp_v2`（展示模型）、`bas::model` 与 `bas::service`。后端驱动、会话运行时、通知和
+公共库导出 `bas::acp`（agent-client-protocol 3.3.0 的 v1 schema）、`bas::acp_v2`（展示模型）、`bas::model` 与 `bas::service`。后端驱动、会话运行时和
 守护进程配置由 `bas` 的私有模块管理；客户端通过 gRPC 使用它们。
 
 ## 构建与运行
 
-本机开发分别启动 daemon 和客户端；外部 Agent 通过 GUI 的 ACP Registry 目录
-或 `bast agent install` 安装，认证使用 Agent 原生流程，见 [安装说明](docs/install.md)。
-GUI 源码运行方式见 [本机启动](docs/gui.md#本机启动)。
+本机开发分别启动 daemon 和客户端；外部 Agent 通过 `bast agent install` 安装，认证使用 Agent 原生流程，见 [安装说明](docs/install.md)。
 
 ```console
 $ cargo build --release
@@ -109,27 +92,22 @@ bast agents
 ```
 
 只安装 `bas`、`bast` 并启用 systemd 用户服务；不创建或修改用户配置。
-只安装可执行程序可使用 `make install-bas`。Codex、OpenCode、Pi 等外部后端可在 GUI 的 Agent 目录或 `bast agent install` 中按需安装，
+只安装可执行程序可使用 `make install-bas`。Codex、OpenCode、Pi 等外部后端可在 `bast agent install` 中按需安装，
 也可沿用用户独立安装的程序和原生登录状态。
 旧 `--with-codex` 已移除，已有捆绑包和配置不会被自动删除或改写。
 官方安装链接、路径配置、迁移及服务管理见 [安装与后端配置](docs/install.md)。
 
 ## 配置
 
-应用外观与前端服务连接保存在 `bas/settings.json`，Agent 注册与 ACP 策略由后端的
-`bas/daemon.json` 管理，可在设置窗口中通过服务接口编辑。
-服务连接列表及后端切换见 [服务连接类型](docs/connections.md#在-basg-中管理和切换服务)；
-关于窗口显示应用版本和 [build tag](docs/build-tags.md)。
+Agent 注册与 ACP 策略保存在用户配置目录的 `bas/daemon.json`。
 服务监听、权限及容量等启动参数仍通过命令行或环境变量设置，命令行同名参数优先。
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `BAS_LISTEN` | `local` | 监听目标；支持本地 IPC 或显式 TCP，多目标以 `;` 分隔，见 [连接类型](docs/connections.md) |
 | `BAS_AGENTS` | 未设置 | 简写后端目录，设置后覆盖 JSON 配置，见下 |
-| `BAS_SETTINGS_FILE` | 用户配置目录下的 `bas/settings.json` | 仅 GUI 偏好；Linux 默认 `~/.config`，跨平台目录见 [GUI 说明](docs/gui.md#统一设置中的外观偏好) |
-| `BAS_DAEMON_SETTINGS_FILE` | 用户配置目录下的 `bas/daemon.json` | 后端 Agent 注册与 ACP 策略，不读取 GUI 偏好路径 |
+| `BAS_DAEMON_SETTINGS_FILE` | 用户配置目录下的 `bas/daemon.json` | 后端 Agent 注册与 ACP 策略，用于服务器配置 |
 | `BAS_AGENTS_FILE` | 未设置 | 显式兼容旧版独立 agent 数组；设置后覆盖后端文件的 agent 目录 |
-| `BAS_NOTIFY` | `auto` | `auto` 允许无桌面运行，`always` 要求通知服务可用，`never` 禁用 |
 | `BAS_HISTORY` | `4096` | 每个会话的内存历史窗口容量；localdb 的磁盘历史不受此容量限制 |
 | `BAS_STORAGE` | `localdb` | 会话存储：`localdb`（默认 SQLite） / `memory`（显式关闭持久化） |
 | `BAS_LOCALDB_PATH` | 用户状态目录下的 `bas/sessions.sqlite3` | `localdb` 的数据库文件路径，`memory` 模式不能设置 |
@@ -173,35 +151,6 @@ JSON 支持完整参数数组，示例见 [contrib/daemon.json](contrib/daemon.j
 `agents.json`。首次成功保存后端配置时生成 `daemon.json` 并保留旧文件。
 显式旧 `--settings-file` 仍兼容；旧服务环境变量须改为 `BAS_DAEMON_SETTINGS_FILE`。
 
-## BasG
-
-图形客户端与 `bast` 共用服务接口。Linux / NixOS 安装：
-
-```sh
-make install-basg
-basg
-```
-
-安装包包含图形运行库与桌面入口，bas 服务单独运行。`make install` 同时安装 daemon、CLI 和 GUI；
-启用用户服务使用 `make install-bas-service`。优先使用 `make install-bas` / `make install-basg`：
-源码快照包含未跟踪的第一方源码，排除 `.git`、`.delta`、`.env` 等元数据。
-`make help` 列出安装目标与传递 Nix 参数的方式。源码均加入 Git 后也可使用
-`nix profile add .#basg`；开发运行使用
-`nix develop .#gui -c cargo run --features gui --bin basg --locked`。
-支持会话创建、搜索、切换、重命名、可恢复归档、流式对话与停止回合。默认构建不启用图形依赖。
-默认打开最小输入弹窗，Ctrl+Shift+M 展开 workspace / thread 窗口，并自动跟随 DMS 的 Zed 主题。
-应用自己的字体、字号、行高、透明度和主题偏好保存在统一 JSON 的 `appearance` section；
-`--settings-file` 可指定位置。用 `Ctrl+,` 打开独立设置窗口，外观按“主题 / 字体 / 布局”分组。
-有效外观修改自动保存并热更新所有窗口，非法配置不会覆盖当前外观。
-Agent 服务页提供官方 ACP Registry 目录，可搜索、安装、更新、登录和移除托管后端；
-聊天 Agent 菜单中的“安装 Agent…”打开同一目录。自定义程序仍可编辑路径和参数。
-使用方式和测试命令见 [GUI 说明](docs/gui.md)。
-
-第一方代码保持 MIT；UI 使用许可兼容的 GPUI 组件，不复制或链接 Zed 的 GPL 上层面板。
-GPUI 组件使用正式发布包，不维护本地源码覆盖；`gds-uim` 宏以 Git revision 固定版本，
-该提交尚未声明许可证，重分发前需澄清授权，见上述源码依赖说明。版本基线、验证结果和待处理问题见
-[原版 UI 依赖基线](docs/upstream-ui.md)。
-
 ## BasT
 
 ```console
@@ -227,8 +176,8 @@ $ bast session remove <id>                    # 永久删除：停止 Agent 并�
 
 `--server` 或 `BAS_SERVER` 可指定连接目标，默认 `local`。本地 IPC 不需要配对；
 TCP 保留但需要显式开启，格式与升级方式见 [服务连接类型](docs/connections.md)。
-归档不取消正在执行的回合，但归档期间不能发起新回合。会话和归档状态仍保存在
-daemon 内存中，受现有历史容量限制；归档不提供跨 daemon 重启的磁盘持久化。
+归档停止后端并保留会话与历史；恢复时按 Agent 能力加载原会话。默认 `localdb` 持久化
+会话与归档状态，`memory` 模式在重启后丢失。
 
 ## 架构要点
 
@@ -237,11 +186,7 @@ daemon 内存中，受现有历史容量限制；归档不提供跨 daemon 重�
 会话交互直接使用 `bas::acp` 的请求、内容、工具、配置选项与更新类型。
 gRPC 用 `AcpPayload` 承载 SDK 的 JSON；Bas 只定义会话管理、回合接收确认和游标信封。
 外部 ACP 驱动直接转发更新，内置 echo 后端也产生同样的 ACP 更新。
-GUI 使用 Agent 返回的 `configOptions` 构建选项控件，并展示图片、嵌入文件和工具结果。
-计划、上下文用量、累计费用、通知和上下文压缩也有对应界面，
-逐项支持范围见 [ACP 展示元素](docs/gui.md#acp-展示元素)。
 类型映射、客户端示例和兼容性说明见 [RPC 接口](docs/rpc.md)。
-未接入能力、稳定协议与实验提案的区别及实施建议见 [ACP 客户端能力差距](docs/acp-client-gaps.md)。
 
 ### 会话、attach 与游标
 
@@ -261,17 +206,15 @@ GUI 使用 Agent 返回的 `configOptions` 构建选项控件，并展示图片�
 
 ### 持久化
 
-按设计文档，真正的消息持久化属于被调用的 agent 侧；守护进程只保留有界回放窗口
-（`BAS_HISTORY`），用于 attach 播报与游标翻页。
+守护进程默认使用 SQLite 保存会话元数据与可回放事件；Agent 自身负责执行上下文的恢复。
+显式 `memory` 模式只保留有界回放窗口（`BAS_HISTORY`）。
 
-### systemd 与桌面通知
+### systemd
 
 - 日志：`BAS_LOG_BACKEND=journald` 时直接写 journald（`tracing-journald`）。
 - 就绪与看门狗：`sd_notify` 发送 `READY=1` / `STOPPING=1`，`WatchdogSec=` 时按半个
   周期 ping。收到退出信号后关闭会话、后端和订阅，在 5 秒清理期限内退出。参考单元文件
   用户服务模板见 `contrib/bas-user.service`，安装与管理见 [安装说明](docs/install.md)。
-- 通知：会话每个回合结束时通过 `org.freedesktop.Notifications` 提醒；没有会话总线
-  （如 headless 环境）时自动关闭。
 
 ## 当前状态
 
@@ -289,11 +232,10 @@ GUI 使用 Agent 返回的 `configOptions` 构建选项控件，并展示图片�
 - **ACP 后端**：已实现初始化、创建会话、prompt、cancel、配置选项和模式设置，
   文件读写及权限回调直接复用 ACP 类型。内容、工具、plan、commands、mode、usage、
   compaction 等更新通过 RPC 与历史传输，Notice 仅实时广播。
-  GUI 展示 Zed 终端扩展；客户端托管的 `terminal/*` 执行回调尚未实现。
-  支持内嵌文件附件、剪贴板图片与标准 ACP 交互审批。
+  客户端托管的 `terminal/*` 执行回调尚未实现。
+  协议保留富内容和标准 ACP 交互审批接口。
 - **权限**：默认拒绝工具权限申请；`--permissions allow` 可开启自动批准。该策略不隔离
-  后端进程的文件访问。GUI 连接审批订阅后由用户选择原生允许／拒绝选项；没有审批客户端
-  的会话行为及请求取消规则见 [GUI 说明](docs/gui.md#数据与验证)。
+  后端进程的文件访问。审批客户端可订阅权限请求并选择允许／拒绝选项。
 - **传输**：默认同用户本地 IPC（Unix socket / Windows Named Pipe），TCP 可显式开启；
   支持多个监听入口，见 [服务连接类型](docs/connections.md)。
 - **远程接入**：[手动证书 mTLS](docs/mtls.md) 已实现；配对、账号服务和 Relay 仍按分期推进；

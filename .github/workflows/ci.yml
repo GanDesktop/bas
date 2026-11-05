@@ -16,25 +16,15 @@ jobs:
       - name: Test installer boundaries without modifying profiles
         run: |
           python3 tests/install_bas.py -v
-          python3 tests/install_basg_dev.py -v
       - name: Check formatting
-        run: nix develop .#gui -c cargo fmt --all -- --check
+        run: nix develop -c cargo fmt --all -- --check
       - name: Build all application targets
-        run: nix develop .#gui -c cargo build --all-targets --features gui-tests --locked
+        run: nix develop -c cargo build --all-targets --locked
       - name: Test daemon and protocol
         run: nix develop -c cargo test --all-targets --locked
       - name: Lint default targets
         run: nix develop -c cargo clippy --all-targets --locked -- -D warnings
-      - name: Test GUI package feature set
-        run: nix develop .#gui -c cargo test --features gui --bin basg --locked
-      - name: Test headless desktop and combined transport features
-        run: nix develop .#gui -c cargo test --features gui-tests --all-targets --locked
-      - name: Test native Wayland clipboard in a private compositor
-        run: nix develop .#gui -c nix shell --inputs-from . nixpkgs#sway-unwrapped nixpkgs#python3 -c python3 tests/wayland_clipboard.py
-      - name: Lint application targets
-        run: nix develop .#gui -c cargo clippy --all-targets --features gui-tests --locked -- -D warnings
-
-  native-desktop:
+  native:
     strategy:
       fail-fast: false
       matrix:
@@ -49,8 +39,8 @@ jobs:
       - name: Use a physical temporary directory on macOS
         if: runner.os == 'macOS'
         run: echo 'TMPDIR=/private/tmp' >> "$GITHUB_ENV"
-      - name: Build native desktop and clients
-        run: cargo build --all-targets --features gui-tests --locked
+      - name: Build native server and terminal
+        run: cargo build --all-targets --locked
       - name: Test shared model and configuration
         run: cargo test --lib --locked
       - name: Test cancellable CLI terminal input
@@ -62,5 +52,3 @@ jobs:
         run: 'cargo test --bin bas management::runtime::process:: --locked'
       - name: Test native installation cancellation and shutdown
         run: 'cargo test --bin bas management::tests::lifecycle:: --locked'
-      - name: Test desktop state and protocol
-        run: cargo test --features gui --bin basg --locked

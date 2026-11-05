@@ -7,7 +7,7 @@ use bas::{
 use tokio::sync::{RwLock, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use super::{Completion, Session, SessionError};
+use super::{Session, SessionError};
 use crate::agent::{self, Catalog, Host, Kind, LaunchRequest};
 use crate::storage::{self, ResumeData, Storage};
 
@@ -79,7 +79,6 @@ pub struct Registry {
     limits: Limits,
     sessions: Arc<RwLock<BTreeMap<SessionId, Arc<Session>>>>,
     stopping: CancellationToken,
-    completions: Option<mpsc::Sender<Completion>>,
     storage: Option<Arc<dyn Storage>>,
     history_gate: tokio::sync::Mutex<()>,
 }
@@ -153,7 +152,6 @@ impl Registry {
             limits,
             sessions: Arc::new(RwLock::new(BTreeMap::new())),
             stopping: CancellationToken::new(),
-            completions: None,
             storage: None,
             history_gate: tokio::sync::Mutex::new(()),
         }
@@ -181,13 +179,8 @@ impl Registry {
             .get_mut();
         for meta in storage.list().await? {
             let running = matches!(meta.status, SessionStatus::Idle | SessionStatus::Working);
-            let session = Session::with_storage(
-                meta,
-                self.limits,
-                self.completions.clone(),
-                Some(Arc::clone(storage)),
-                !running,
-            );
+            let session =
+                Session::with_storage(meta, self.limits, Some(Arc::clone(storage)), !running);
             if let Some(stored) = storage.load(session.id()).await?
                 && let Some(resume) = stored.resume
             {
@@ -199,11 +192,6 @@ impl Registry {
             sessions.insert(session.id(), session);
         }
         Ok(())
-    }
-
-    pub fn with_completions(mut self, completions: mpsc::Sender<Completion>) -> Self {
-        self.completions = Some(completions);
-        self
     }
 
     pub fn catalog(&self) -> Arc<Catalog> {
@@ -335,13 +323,7 @@ impl Registry {
         meta.cwd = Some(cwd.clone());
         meta.title = request.title;
         let mut pending = PendingSession::create(meta.clone(), self.storage.clone()).await?;
-        let session = Session::with_storage(
-            meta,
-            self.limits,
-            self.completions.clone(),
-            self.storage.clone(),
-            true,
-        );
+        let session = Session::with_storage(meta, self.limits, self.storage.clone(), true);
         let (updates, inbox) = mpsc::channel(self.limits.live_capacity.get());
         // Drain initialization updates too, so protocol startup cannot deadlock on a full queue.
         session.listen(inbox);

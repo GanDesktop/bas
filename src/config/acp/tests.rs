@@ -160,12 +160,6 @@ fn scoped_saves_preserve_lifecycle_and_missing_managed_installations() {
         .load()
         .expect("missing installation does not block reading");
     store
-        .save_appearance(&mut document, Default::default())
-        .expect("appearance save");
-    store
-        .save_frontend(&mut document, Default::default())
-        .expect("frontend save");
-    store
         .save_agents(&mut document, settings.daemon.agents.clone())
         .expect("agents save");
     let original = std::fs::read(store.path()).expect("saved settings");

@@ -4,7 +4,6 @@ use super::*;
 fn strict_json_and_domain_rules() {
     for text in [
         r#"{"unknown":1}"#,
-        r#"{"appearance":{"unknown":1}}"#,
         r#"{"daemon":{"unknown":1}}"#,
         r#"{"daemon":{"agents":[{"id":"x","kind":"embedded","unknown":1}]}}"#,
         r#"{"daemon":{"agents":[{"id":"x","kind":"acp","command":{"program":"dummy","unknown":1}}]}}"#,
@@ -34,24 +33,6 @@ fn strict_json_and_domain_rules() {
     ] {
         assert!(validate_agents(&[serde_json::from_str(text).expect("structural JSON")]).is_err());
     }
-    for value in [0., -1., f32::NAN, f32::INFINITY] {
-        assert!(
-            Appearance {
-                ui_font_size: Some(value),
-                ..Appearance::default()
-            }
-            .validate()
-            .is_err()
-        );
-    }
-    for text in [
-        r#"{"content_opacity":2}"#,
-        r#"{"font_fallbacks":[" "]}"#,
-        r#"{"theme_file":""}"#,
-        r#"{"composer_enter_behavior":"unsupported"}"#,
-    ] {
-        assert!(Appearance::from_json(text).is_err());
-    }
     assert_eq!(
         " BUILTIN ".parse::<agent::Kind>().expect("alias"),
         agent::Kind::Embedded
@@ -59,42 +40,6 @@ fn strict_json_and_domain_rules() {
     assert!("x=embedded:dummy".parse::<AgentSpec>().is_err());
     assert!("x=acp".parse::<AgentSpec>().is_err());
     assert!("=embedded".parse::<AgentSpec>().is_err());
-}
-
-#[test]
-fn sections_merge_and_conflict() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let store = Store::at(dir.path().join("settings.json"));
-    let mut a = store.load().expect("load");
-    let mut b = a.clone();
-    let appearance = Appearance {
-        ui_font_size: Some(19.),
-        ..Appearance::default()
-    };
-    store
-        .save_appearance(&mut a, appearance.clone())
-        .expect("appearance save");
-    store
-        .save_agents(
-            &mut b,
-            vec![
-                AgentSpec::acp(
-                    "dummy",
-                    agent::Command::new("dummy", ["arg with spaces".into()]),
-                )
-                .into(),
-            ],
-        )
-        .expect("agents save");
-    assert_eq!(store.load().expect("load").settings.appearance, appearance);
-    assert!(matches!(
-        store.save_appearance(&mut b, Appearance::default()),
-        Ok(())
-    ));
-    assert!(matches!(
-        store.save_appearance(&mut a, appearance),
-        Err(Error::Conflict { .. })
-    ));
 }
 
 #[test]

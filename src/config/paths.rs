@@ -1,4 +1,4 @@
-//! Shared user directories for GUI settings, desktop state and daemon storage.
+//! Shared user directories for server configuration and storage.
 
 use std::{ffi::OsString, path::PathBuf};
 

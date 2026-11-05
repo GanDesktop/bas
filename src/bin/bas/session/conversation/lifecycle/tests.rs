@@ -57,7 +57,7 @@ async fn session() -> (Arc<Session>, Arc<Counts>) {
         .create(meta.clone(), Some(storage::ResumeData::acp("original")))
         .await
         .expect("create");
-    let session = Session::with_storage(meta, limits, None, Some(storage), true);
+    let session = Session::with_storage(meta, limits, Some(storage), true);
     session.remember_backend_id("original".into());
     let counts = Arc::new(Counts::default());
     session.lock().agent = Some(Box::new(Reclaimable(Arc::clone(&counts), None)));

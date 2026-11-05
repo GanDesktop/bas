@@ -56,8 +56,6 @@ async fn restart_only_initializes_last_used_reserve_and_keeps_old_sessions_lazy(
             .args([
                 "--listen",
                 "127.0.0.1:0",
-                "--notify",
-                "never",
                 "--log-backend",
                 "stdout",
                 "--storage",

@@ -1,4 +1,4 @@
-use super::{AgentRegistration, AgentSpec, Appearance, Frontend, Settings, validate_agents};
+use super::{AgentRegistration, AgentSpec, Settings, validate_agents};
 use serde::de::DeserializeOwned;
 use std::{
     fs::{self, OpenOptions},
@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 
 mod owned;
 mod scoped;
-pub use owned::{DaemonDocument, DaemonStore, FrontendDocument, FrontendStore};
+pub use owned::{DaemonDocument, DaemonStore};
 
 #[cfg(test)]
 mod tests;
@@ -71,7 +71,6 @@ pub struct Store {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scope {
     Unified,
-    Frontend,
     Daemon,
 }
 #[derive(PartialEq)]
@@ -84,10 +83,8 @@ struct Loaded {
     raw: serde_json::Value,
 }
 enum Section {
-    Appearance(Appearance),
     Agents(Vec<AgentRegistration>),
     Acp(super::AcpLifecycle),
-    Frontend(Frontend),
 }
 impl Store {
     pub fn new(path: Option<PathBuf>) -> Self {
@@ -121,26 +118,12 @@ impl Store {
     }
     /// # Errors
     /// Rejects conflicts, busy locks, links, invalid documents and I/O failures.
-    pub fn save_appearance(
-        &self,
-        document: &mut Document,
-        appearance: Appearance,
-    ) -> Result<(), Error> {
-        self.save(document, Section::Appearance(appearance))
-    }
-    /// # Errors
-    /// Rejects conflicts, busy locks, links, invalid documents and I/O failures.
     pub fn save_agents(
         &self,
         document: &mut Document,
         agents: Vec<AgentRegistration>,
     ) -> Result<(), Error> {
         self.save(document, Section::Agents(agents))
-    }
-    /// # Errors
-    /// Rejects conflicts, busy locks, links, invalid documents and I/O failures.
-    pub fn save_frontend(&self, document: &mut Document, frontend: Frontend) -> Result<(), Error> {
-        self.save(document, Section::Frontend(frontend))
     }
     fn read(&self) -> Result<Loaded, Error> {
         if self.scope != Scope::Unified {
@@ -155,23 +138,13 @@ impl Store {
             validate(&self.path, &settings)?;
         } else if self.import_legacy {
             let parent = self.parent();
-            let appearance_path = parent.join("appearance.json");
             let agents_path = parent.join("agents.json");
-            let appearance = read_optional(&appearance_path)?;
             let agents = read_optional(&agents_path)?;
-            if let Some(bytes) = &appearance {
-                settings.appearance = parse(&appearance_path, bytes)?;
-                settings
-                    .appearance
-                    .validate()
-                    .map_err(|e| invalid(&appearance_path, e))?;
-            }
             if let Some(bytes) = &agents {
                 let legacy: Vec<AgentSpec> = parse(&agents_path, bytes)?;
                 validate_agents(&legacy).map_err(|e| invalid(&agents_path, e))?;
                 settings.daemon.agents = legacy.into_iter().map(Into::into).collect();
             }
-            snapshot.files.push((appearance_path, appearance));
             snapshot.files.push((agents_path, agents));
         }
         let sources = snapshot
@@ -202,16 +175,6 @@ impl Store {
         name.into()
     }
     fn save(&self, document: &mut Document, section: Section) -> Result<(), Error> {
-        if matches!(
-            (&section, self.scope),
-            (Section::Agents(_) | Section::Acp(_), Scope::Frontend)
-                | (Section::Appearance(_) | Section::Frontend(_), Scope::Daemon)
-        ) {
-            return Err(invalid(
-                &self.path,
-                "configuration section belongs to the other application",
-            ));
-        }
         reject_links(&self.path)?;
         fs::create_dir_all(self.parent()).map_err(|e| io_error(self.parent(), e))?;
         let lock_path = self.lock_path();
@@ -233,13 +196,6 @@ impl Store {
         let loaded = self.read()?;
         let mut settings = loaded.document.settings;
         let name = match section {
-            Section::Appearance(appearance) => {
-                if settings.appearance != document.baseline.appearance {
-                    return Err(self.conflict("appearance"));
-                }
-                settings.appearance = appearance;
-                "appearance"
-            }
             Section::Agents(agents) => {
                 if settings.daemon.agents != document.baseline.daemon.agents {
                     return Err(self.conflict("daemon.agents"));
@@ -253,13 +209,6 @@ impl Store {
                 }
                 settings.daemon.acp = policy;
                 "daemon.acp"
-            }
-            Section::Frontend(frontend) => {
-                if settings.frontend != document.baseline.frontend {
-                    return Err(self.conflict("frontend"));
-                }
-                settings.frontend = frontend;
-                "frontend"
             }
         };
         self.validate_scoped(&settings)?;
@@ -316,12 +265,7 @@ fn parse<T: DeserializeOwned>(path: &Path, bytes: &[u8]) -> Result<T, Error> {
     })
 }
 fn validate(path: &Path, settings: &Settings) -> Result<(), Error> {
-    settings
-        .appearance
-        .validate()
-        .map_err(|e| invalid(path, e))?;
-    settings.daemon.validate().map_err(|e| invalid(path, e))?;
-    settings.frontend.validate().map_err(|e| invalid(path, e))
+    settings.daemon.validate().map_err(|e| invalid(path, e))
 }
 fn reject_links(path: &Path) -> Result<(), Error> {
     for ancestor in path.ancestors().filter(|p| !p.as_os_str().is_empty()) {

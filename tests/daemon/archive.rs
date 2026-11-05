@@ -30,8 +30,6 @@ async fn cli_archive_and_restore_keep_the_same_conversation() {
     command.args([
         "--listen",
         "127.0.0.1:0",
-        "--notify",
-        "never",
         "--log-backend",
         "stdout",
         "--log-filter",

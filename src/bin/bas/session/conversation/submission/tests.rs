@@ -26,7 +26,6 @@ async fn session() -> (Arc<Session>, Arc<AtomicUsize>) {
             history_capacity: std::num::NonZeroUsize::new(4).expect("capacity"),
             ..Limits::default()
         },
-        None,
     );
     let count = Arc::new(AtomicUsize::new(0));
     session

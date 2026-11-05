@@ -1,7 +1,6 @@
 # RPC 与 ACP 类型
 
-Bas 的会话交互复用 `agent-client-protocol` 3.3.0 提供的 schema，
-与 2026-10-10 核对的 [Zed 基线](upstream-ui.md#acp-展示协议基线2026-10-10)一致。
+Bas 的会话交互复用 `agent-client-protocol` 3.3.0 提供的 schema。
 外部 Agent 连接仍协商 ACP v1，RPC 与历史使用 `bas::acp`；
 `bas::acp_v2` 用于新版计划、用量、通知、压缩等展示模型。
 SDK 启用 `process`、`schemars`、`unstable`、`unstable_protocol_v2`；
@@ -52,7 +51,6 @@ TCP、mTLS 和本地 IPC 不改变这两条路径的含义。
 | SetMode | `SetSessionModeRequest` / `SetSessionModeResponse` |
 | Event.acp_update | v1 `SessionUpdate`，包含内容块、工具局部更新、计划、命令、选项、用量、会话信息、通知和压缩更新 |
 | Attach、LoadHistory | 带游标的有界历史与实时订阅 |
-| SetForeground | 双向流报告前台会话，逐条确认；流断开自动释放状态 |
 | SetTitle | Bas 本地会话标题 |
 
 `SetSessionDirectories` 接收绝对目录列表，在 daemon 主机验证、规范化并去重；
@@ -67,15 +65,13 @@ TCP、mTLS 和本地 IPC 不改变这两条路径的含义。
 仍由 daemon 执行。客户端托管的终端执行能力仍未声明；初始化时通过
 `clientCapabilities._meta.terminal_output = true` 接收
 [Zed 的展示用终端扩展](https://github.com/zed-industries/zed/blob/main/crates/agent_servers/src/acp.rs)。
-工具更新的 `_meta.terminal_info`、`terminal_output`、`terminal_exit` 原样进入历史，
-GUI 按终端 ID 累积输出并渲染，`rawOutput` 作为没有可展示内容时的兜底。
+工具更新的 `_meta.terminal_info`、`terminal_output`、`terminal_exit` 原样进入历史。
 终端目录与退出信息也保留，空输出的退出事件仍可展示。
 初始化还声明 `plan`、`session.compaction` 和 `session.notices`；
 普通会话连接还声明 `subagents: {}`。子会话必须先由已知父会话公告，不能变更所有权或形成循环；
 子事件不随主回合结束而丢弃，也不进入主回答。子 Notice 仍为实时事件而非历史。
 恢复后旧活动状态先失效，只有 Agent 重新报告的状态才用于工作计数；
 load／resume 重放恢复子会话快照，但不会把已有子消息再次追加进历史。
-这些 v1 实验事件经 RPC 到达 GUI 后转为 v2 展示类型。
 这些能力在初始化时协商，更新 daemon 后应新建 session。这不是一个代理全部 ACP 方法的通用网关。
 
 Rust 客户端示例：
@@ -108,9 +104,7 @@ let options = client.set_config_option_acp(
 
 `ListAgentSessions` 可按绝对 `cwd` 过滤；所有 ACP 页在同一连接中读取，
 不把不透明游标保存到 Bas。重复游标返回错误，超过 10,000 条时要求按 workspace 过滤，
-整个发现过程受 daemon 启动超时限制。GUI 独立历史窗口按 ACP Agent ID 分组，
-将所选主工作区的完整 `cwd` 传入此 RPC，并在结果上继续本地搜索和校验主目录。
-全部 Agent 模式最多同时执行两个发现请求；切换筛选时隔离旧响应，不无限启动 Agent 进程。
+整个发现过程受 daemon 启动超时限制。
 
 `ImportAgentSession` 使用 Agent 原始 session ID 与工作目录，并为 Bas 分配公开 UUID。
 同一 Agent／原始 ID 的导入串行去重，已有记录不会重复加载。
@@ -147,7 +141,7 @@ Agent 拒绝关闭时保留原实例，传输超时则释放不确定的本地�
 
 正常 `CreateSession` 的 ACP `AuthRequired` 映射为 gRPC `UNAUTHENTICATED`，
 原始 ACP 错误保存在 status details，保留扩展字段；初始化广告的方式与错误来源分别读取。
-GUI 遇到认证需求时重新执行 `CheckAgent`，取得完整初始化响应和当次错误。
+客户端遇到认证需求时重新执行 `CheckAgent`，取得完整初始化响应和当次错误。
 失败的启动不注册空会话、不发 prompt，所拥有的后端进程照常回收。
 终端认证能力 `auth.terminal` 与代理工具用的 `terminal` 执行能力不同；
 声明前者不会授权 Agent 在连接检测时执行主机终端命令。
@@ -205,7 +199,7 @@ URL 由用户确认后打开，接受请求后仍等待该连接的 `elicitation
 `LogoutAgent { agent, expected_spec_json }` 仅接受 loopback 调用，沿用本地配置核对，
 并在同一条短连接里先 initialize、再检查标准 logout 能力。不支持时不发送该方法。
 请求受 daemon 启动超时约束，不自动重试，也不通过 `session/new` 验证退出结果。
-原生错误经 status details 保留；GUI 清除旧检测状态，后续由用户显式检测或登录。
+原生错误经 status details 保留；后续由用户显式检测或登录。
 Bas 不改变本地会话、Agent 配置和环境变量；Agent 对已有运行会话及凭据的处理由其实现决定。
 
 ### 快照与回合确认
@@ -217,7 +211,7 @@ Bas 不改变本地会话、Agent 配置和环境变量；Agent 对已有运行�
 `TurnAccepted.cursor` 与 `turn` 一起标识被接受的请求。客户端必须确认对应回合或足够新的
 会话状态，才能派发下一条排队消息；无关的标题变更不能解除发送屏障。
 旧 daemon 缺少这些新增字段时，数值为零，不能将零版本当成可靠的进度确认。
-建议 daemon、CLI、GUI 一起更新。
+建议 daemon 与 CLI 一起更新。
 
 客户端按会话保存已读回复游标，用 `last_reply` 判断后台 thread 的未读状态；
 不能将任意 `revision` 或 `updated_at` 变化当成新回复。旧服务缺少 `last_reply` 时，
@@ -230,7 +224,7 @@ Bas 不改变本地会话、Agent 配置和环境变量；Agent 对已有运行�
 
 `WatchPermissions { session }` 订阅当前仍待处理的 ACP 权限请求快照。每条请求有
 daemon 生成的唯一 `request_id` 和完整 `RequestPermissionRequest`；新订阅者收到当前
-快照，已回答的请求不会通过历史重放。GUI 在加载会话历史前建立审批订阅。
+快照，已回答的请求不会通过历史重放。客户端可在发送任务前建立审批订阅。
 
 `RespondPermission { session, request_id, response }` 返回原生 ACP
 `RequestPermissionResponse`。服务端校验会话、待审批 ID 和 Agent 实际提供的 option ID；
@@ -268,7 +262,6 @@ daemon 生成的唯一 `request_id` 和完整 `RequestPermissionRequest`；新�
 恢复加载原会话，成功后将取消归档与就绪状态一起提交；失败、能力不支持或提交前取消
 保持原记录已归档且已停止，不创建替代会话。已知持久化故障仍拒绝修改。
 
-GUI 在归档时保留草稿和未发队列并暂停派发，恢复本身不自动解除队列暂停。
 `DeleteSession` / `bast session remove` 仍是停止 Agent 并遗忘会话的永久删除操作，
 不作为旧服务器不支持归档时的兼容替代。
 
@@ -276,7 +269,7 @@ GUI 在归档时保留草稿和未发队列并暂停派发，恢复本身不自�
 加载旧版本归档但未停止的记录时，将其规范为停止状态，不启动归档的 Agent。
 `memory` 模式只保留有界内存历史，重启后丢失。Agent 继续对话还取决于其会话恢复能力，
 已淘汰的内存事件不会恢复。
-归档功能需更新 daemon、CLI 与 GUI；旧 daemon 返回 `UNIMPLEMENTED` 时应提示升级，
+归档功能需更新 daemon 与 CLI；旧 daemon 返回 `UNIMPLEMENTED` 时应提示升级，
 不能把新增字段的默认 `false` 当作旧服务支持归档的证据。
 
 ### 完成回合的物理存储
@@ -403,10 +396,8 @@ context 不添加历史回合完成或错误通知，以免产生窗口外的虚
 包括 canonicalize 后指向非 UTF-8 目录的符号链接，不使用替换字符改写路径。
 CLI 的人类可读输出会转义终端控制字符；JSON 输出保留 JSON 自身的编码语义。
 
-这是对旧自定义消息协议的破坏性调整，daemon、CLI、GUI 应一起重新编译和更新。
+这是对旧自定义消息协议的破坏性调整，daemon 与 CLI 应一起重新编译和更新。
 旧的 ContentBlock / Delta / Message protobuf 字段已移除，事件字段号保留以避免复用。
-GUI 的 `Message` 仅用于界面聚合，不属于 RPC schema。GUI 附件选择直接构造 ACP 图片和嵌入资源，
-与文本一起放入 `PromptRequest.prompt`；Agent 未声明 `embeddedContext` 时，GUI 将文本文件转换为带文件名和 URI 的 ACP 文本块。
 没有新增自定义上传协议。交互审批使用上文的原生权限请求与回答接口。
 
 ACP 原始定义参见 [内容类型](https://agentclientprotocol.com/protocol/v1/content) 与

@@ -47,7 +47,6 @@
             rustc = toolchain;
           };
         };
-      windowPackageFor = system: (packageFor system).override { gui = true; };
       testAgentFor =
         system:
         let
@@ -65,12 +64,10 @@
       packages = eachLinux (system: {
         default = packageFor system;
         bas = packageFor system;
-        basg = windowPackageFor system;
         acp-test-agent = testAgentFor system;
       });
       checks = eachLinux (system: {
         package = packageFor system;
-        basg = windowPackageFor system;
         acp-test-agent = testAgentFor system;
       });
       apps = eachLinux (system: {
@@ -81,10 +78,6 @@
         bast = {
           type = "app";
           program = "${packageFor system}/bin/bast";
-        };
-        basg = {
-          type = "app";
-          program = "${windowPackageFor system}/bin/basg";
         };
         acp-test-agent = {
           type = "app";
@@ -98,19 +91,8 @@
           pkgs = pkgsFor system;
 
           toolchain = toolchainFor pkgs;
-          desktopLibraries = import ./nix/desktop-libraries.nix { inherit pkgs; };
-          guiShell = pkgs.mkShell {
-            packages = [
-              toolchain
-              pkgs.pkg-config
-            ];
-            buildInputs = desktopLibraries;
-            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath desktopLibraries;
-            RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
-          };
         in
         {
-          gui = guiShell;
           default = pkgs.mkShell {
             packages = [
               toolchain

@@ -50,14 +50,7 @@ async fn daemon_settings_file_environment_reloads_catalog_and_preserves_sessions
         .env_remove("BAS_AGENTS")
         .env("BAS_SETTINGS_FILE", frontend)
         .env("BAS_DAEMON_SETTINGS_FILE", &path)
-        .args([
-            "--listen",
-            "127.0.0.1:0",
-            "--notify",
-            "never",
-            "--log-backend",
-            "stdout",
-        ]);
+        .args(["--listen", "127.0.0.1:0", "--log-backend", "stdout"]);
     let mut daemon = Daemon::start(command).await;
     assert_eq!(ids(&mut daemon).await, ["before"]);
     let old = daemon
@@ -114,14 +107,7 @@ async fn explicit_agents_override_catalogs_but_keep_settings_as_policy_source() 
         .arg(&settings)
         .arg("--agents-file")
         .arg(&legacy)
-        .args([
-            "--listen",
-            "127.0.0.1:0",
-            "--notify",
-            "never",
-            "--log-backend",
-            "stdout",
-        ]);
+        .args(["--listen", "127.0.0.1:0", "--log-backend", "stdout"]);
     let mut daemon = Daemon::start(command).await;
     assert_eq!(ids(&mut daemon).await, ["fixed"]);
     write_settings(&settings, "changed");
@@ -144,14 +130,7 @@ async fn explicit_legacy_file_precedes_settings_and_reloads() {
         .env("BAS_DAEMON_SETTINGS_FILE", &settings)
         .arg("--agents-file")
         .arg(&legacy)
-        .args([
-            "--listen",
-            "127.0.0.1:0",
-            "--notify",
-            "never",
-            "--log-backend",
-            "stdout",
-        ]);
+        .args(["--listen", "127.0.0.1:0", "--log-backend", "stdout"]);
     let mut daemon = Daemon::start(command).await;
     assert_eq!(ids(&mut daemon).await, ["legacy"]);
     std::fs::write(&legacy, r#"[{"id":"reloaded","kind":"embedded"}]"#).unwrap();
@@ -218,14 +197,7 @@ async fn default_catalog_migrates_once_without_falling_back_on_deletion() {
     command
         .env_remove("BAS_AGENTS")
         .env("XDG_CONFIG_HOME", directory.path())
-        .args([
-            "--listen",
-            "127.0.0.1:0",
-            "--notify",
-            "never",
-            "--log-backend",
-            "stdout",
-        ]);
+        .args(["--listen", "127.0.0.1:0", "--log-backend", "stdout"]);
     let mut daemon = Daemon::start(command).await;
     assert_eq!(ids(&mut daemon).await, ["legacy"]);
     assert!(!settings.exists(), "legacy import is read-only");
@@ -271,14 +243,7 @@ async fn reload_errors_are_deduplicated_without_logging_configuration_values() {
         .env_remove("BAS_AGENTS")
         .arg("--settings-file")
         .arg(&path)
-        .args([
-            "--listen",
-            "127.0.0.1:0",
-            "--notify",
-            "never",
-            "--log-backend",
-            "stdout",
-        ]);
+        .args(["--listen", "127.0.0.1:0", "--log-backend", "stdout"]);
     let mut daemon = Daemon::start(command).await;
     // Publish one invalid snapshot; a truncate/write can expose a different EOF error.
     let mut invalid = tempfile::NamedTempFile::new_in(directory.path()).unwrap();

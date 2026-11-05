@@ -102,8 +102,6 @@ async fn mtls_handshakes_rpc_stream_and_mixed_listeners() {
         .env("BAS_DAEMON_SETTINGS_FILE", &settings)
         .env("BAS_ACP_DATA_DIR", directory.path().join("acp"));
     command.args([
-        "--notify",
-        "never",
         "--log-backend",
         "stdout",
         "--log-filter",
@@ -306,7 +304,7 @@ async fn invalid_or_incomplete_tls_configuration_fails_closed() {
     }
     std::fs::write(&certs.server_key, "not a private key").expect("invalid server PEM");
     let mut invalid = command();
-    invalid.args(["--listen", "mtls://127.0.0.1:0", "--notify", "never"]);
+    invalid.args(["--listen", "mtls://127.0.0.1:0"]);
     certs.configure(&mut invalid);
     let output = tokio::time::timeout(TIMEOUT, invalid.output())
         .await

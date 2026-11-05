@@ -10,7 +10,7 @@ use clap::Parser;
 
 use crate::{
     agent::PermissionPolicy,
-    config::{self, Config, Notify, Storage},
+    config::{self, Config, Storage},
     session::{DEFAULT_BUFFER, DEFAULT_HISTORY, DEFAULT_STARTUP_TIMEOUT, Limits},
 };
 
@@ -42,9 +42,6 @@ pub struct Args {
     /// Deprecated explicit backend settings path; use --daemon-settings-file.
     #[arg(long, value_name = "PATH", conflicts_with = "daemon_settings_file")]
     settings_file: Option<PathBuf>,
-    /// Desktop notification policy: auto, always (required), or never.
-    #[arg(long, env = config::NOTIFY_ENV, default_value = "auto")]
-    notify: Notify,
     /// Replayable events kept per session; must be greater than zero.
     #[arg(long, env = config::HISTORY_ENV, default_value_t = NonZeroUsize::new(DEFAULT_HISTORY).expect("nonzero default"))]
     history: NonZeroUsize,
@@ -121,7 +118,6 @@ impl Args {
         Ok(Config {
             listen: self.listen.clone(),
             tls,
-            notify: self.notify,
             agents,
             acp,
             catalog_source,

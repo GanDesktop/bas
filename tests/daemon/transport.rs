@@ -17,8 +17,6 @@ fn local_command(target: &Target) -> Command {
     command.args([
         "--listen",
         &target.to_string(),
-        "--notify",
-        "never",
         "--log-backend",
         "stdout",
         "--log-filter",
@@ -87,8 +85,6 @@ async fn default_daemon_and_cli_use_the_same_local_endpoint() {
     let directory = tempfile::tempdir().expect("runtime directory");
     let mut command = command();
     command.env("XDG_RUNTIME_DIR", directory.path()).args([
-        "--notify",
-        "never",
         "--log-backend",
         "stdout",
         "--log-filter",

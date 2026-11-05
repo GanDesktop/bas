@@ -132,7 +132,7 @@ impl Storage for PausedCommit {
 }
 
 #[tokio::test]
-async fn terminal_interruption_and_status_commit_together_before_notification() {
+async fn terminal_interruption_and_status_commit_together_before_publication() {
     for failed in [false, true] {
         let storage = Arc::new(PausedCommit {
             inner: Memory::new(NonZeroUsize::new(100).expect("capacity")),
@@ -144,14 +144,7 @@ async fn terminal_interruption_and_status_commit_together_before_notification() 
         let meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
         let id = meta.id;
         storage.create(meta.clone(), None).await.expect("create");
-        let (sender, mut completions) = mpsc::channel(2);
-        let session = Session::with_storage(
-            meta,
-            Limits::default(),
-            Some(sender),
-            Some(storage.clone()),
-            true,
-        );
+        let session = Session::with_storage(meta, Limits::default(), Some(storage.clone()), true);
         let (updates, inbox) = mpsc::channel(16);
         session.listen(inbox);
         session
@@ -177,7 +170,6 @@ async fn terminal_interruption_and_status_commit_together_before_notification() 
         });
         storage.entered.notified().await;
         assert_eq!(session.meta().status, SessionStatus::Working);
-        assert!(completions.try_recv().is_err());
         assert!(
             storage
                 .page(id, Some(cursor), 10)
@@ -193,12 +185,6 @@ async fn terminal_interruption_and_status_commit_together_before_notification() 
         } else {
             SessionStatus::Stopped
         };
-        let completion = completions.recv().await.expect("completion");
-        assert_eq!(completion.session.status, expected);
-        assert!(matches!(
-            completion.outcome,
-            crate::session::CompletionOutcome::Interrupted(_)
-        ));
         let page = storage.page(id, Some(cursor), 10).await.expect("history");
         assert_eq!(page.events.len(), 2);
         assert!(
@@ -391,8 +377,7 @@ async fn restore_barrier_retains_updates_after_the_load_response() {
         .create(meta.clone(), None)
         .await
         .expect("saved session");
-    let session =
-        Session::with_storage(meta, Limits::default(), None, Some(storage.clone()), false);
+    let session = Session::with_storage(meta, Limits::default(), Some(storage.clone()), false);
     let (updates, inbox) = mpsc::channel(10);
     session.listen(inbox);
     let restoring = Arc::clone(&session.restore_gate).lock_owned().await;
@@ -550,7 +535,7 @@ async fn recovery_records_an_interrupted_turn_instead_of_silently_clearing_it() 
         .create(meta.clone(), None)
         .await
         .expect("save session");
-    let session = Session::with_storage(meta, limits, None, Some(Arc::clone(&storage)), true);
+    let session = Session::with_storage(meta, limits, Some(Arc::clone(&storage)), true);
     let (updates, inbox) = mpsc::channel(limits.live_capacity.get());
     session.listen(inbox);
     session

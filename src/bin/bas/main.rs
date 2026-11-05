@@ -1,7 +1,6 @@
 //! `bas` — the Bas agent service daemon.
 //!
-//! The daemon owns agent sessions, exposes them over gRPC, and reports
-//! completion to the user through desktop notifications. It is built to run
+//! The daemon owns agent sessions and exposes them over gRPC. It is built to run
 //! under systemd: logs go to journald, readiness is signalled with `sd_notify`,
 //! and `WatchdogSec=` is honored.
 
@@ -9,7 +8,6 @@ mod agent;
 mod clap;
 mod config;
 mod management;
-mod notify;
 mod service;
 mod session;
 mod storage;
@@ -24,7 +22,6 @@ use anyhow::{Context, Result};
 use crate::{
     agent::{Catalog, LocalHost},
     config::Config,
-    notify::Watcher,
     session::Registry,
 };
 
@@ -51,7 +48,6 @@ async fn main() -> Result<()> {
 /// Builds the daemon's runtime and serves until a shutdown signal arrives.
 async fn run(config: Config) -> Result<()> {
     let shutdown = system::shutdown_signal().context("cannot install shutdown handlers")?;
-    let watcher = Watcher::connect(config.notify).await?;
     let storage: Arc<dyn storage::Storage> = match config.localdb_path()? {
         Some(path) => Arc::new(
             storage::LocalDb::open(&path)
@@ -71,9 +67,6 @@ async fn run(config: Config) -> Result<()> {
         .recover()
         .await
         .context("cannot recover stored sessions")?;
-    if let Some(watcher) = &watcher {
-        registry = registry.with_completions(watcher.sender.clone());
-    }
     let registry = Arc::new(registry);
     let maintenance =
         tokio_util::task::AbortOnDropHandle::new(tokio::spawn(Arc::clone(&registry).maintain()));
@@ -153,9 +146,6 @@ async fn run(config: Config) -> Result<()> {
         maintenance.await.context("backend maintenance failed")?;
         if let Some(catalog_watcher) = catalog_watcher {
             catalog_watcher.await.context("catalog watcher failed")?;
-        }
-        if let Some(watcher) = watcher {
-            watcher.shutdown().await;
         }
         result.context("the gRPC server failed")
     };

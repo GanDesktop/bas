@@ -6,7 +6,7 @@
 //! * [`service`] — gRPC envelopes, ACP payloads, and client connections.
 //! * [`config`] — shared settings, validation, and section-scoped persistence.
 //!
-//! Backend drivers, session management, runtime configuration, notifications, and the
+//! Backend drivers, session management, runtime configuration, and the
 //! gRPC service implementation belong to the `bas` binary.
 
 pub mod authentication;

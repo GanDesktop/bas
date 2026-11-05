@@ -12,8 +12,6 @@ async fn storage_failure_can_be_retried_without_restarting_daemon_or_resending_p
         .args([
             "--listen",
             "127.0.0.1:0",
-            "--notify",
-            "never",
             "--log-backend",
             "stdout",
             "--storage",
@@ -178,8 +176,6 @@ async fn localdb_survives_daemon_restart_with_history_and_the_same_session_id() 
             .env("XDG_STATE_HOME", directory.path())
             .arg("--listen")
             .arg("127.0.0.1:0")
-            .arg("--notify")
-            .arg("never")
             .arg("--log-backend")
             .arg("stdout");
         command
@@ -289,8 +285,6 @@ async fn acknowledged_prompt_remains_replayable_after_daemon_is_killed() {
             .args([
                 "--listen",
                 "127.0.0.1:0",
-                "--notify",
-                "never",
                 "--log-backend",
                 "stdout",
                 "--storage",

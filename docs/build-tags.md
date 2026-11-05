@@ -1,7 +1,6 @@
-# About build identity
+# Build identity
 
-About displays the package version from Cargo (no separate version constant) and
-a compile-time build tag. Tags contain no timestamps, usernames, paths, or remote
+Build metadata provides the Cargo package version and a compile-time build tag. Tags contain no timestamps, usernames, paths, or remote
 URLs by default.
 
 - **Nix:** `nix-source-<32-character source store hash>`. This identifies the
@@ -25,6 +24,4 @@ verbatim, so use public identifiers, never secrets. In Nix, pass the optional
 `buildTag` package argument (for example through `.override`); otherwise Nix
 supplies the source tag automatically.
 
-Metadata unit tests run with `cargo test --test build_metadata`. The GUI
-`application::tests::about_renders_explicit_version_and_build_tag` test checks
-the rendered labeled fields with `gui-tests` enabled.
+Metadata unit tests run with `cargo test --test build_metadata`.

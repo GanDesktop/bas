@@ -94,7 +94,7 @@ impl ServerTls {
     /// Returns file read errors. Tonic validates the material when configuring
     /// the server. Client certificates are mandatory, not optional.
     pub fn load(&self) -> Result<ServerTlsConfig, Error> {
-        // Tonic's server uses rustls's process default; GUI dependencies enable
+        // Tonic's server uses rustls's process default; other dependencies may enable
         // both providers, so feature-based selection is ambiguous. Respect an
         // existing default, otherwise use the same ring provider as tonic.
         let _ = rustls::crypto::ring::default_provider().install_default();

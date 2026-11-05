@@ -26,7 +26,6 @@ async fn only_sessions_without_storage_retain_a_ring() {
                 history_capacity: NonZeroUsize::new(2).expect("capacity"),
                 ..Limits::default()
             },
-            None,
             storage.clone(),
             true,
         );

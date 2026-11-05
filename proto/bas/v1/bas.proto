@@ -1,4 +1,4 @@
-// The wire protocol between bas and its clients (bast, TUI, GUI).
+// The wire protocol between bas and its clients (bast and other terminal clients).
 //
 // ACP payloads are canonical JSON serialized by agent-client-protocol.
 // Protobuf only defines daemon management, routing and replay envelopes.
@@ -58,9 +58,6 @@ service Bas {
   // Attaches to a session: replays history, then streams live events until the
   // client disconnects. Detaching never stops the agent.
   rpc Attach(AttachRequest) returns (stream Event);
-  // Tracks the session currently viewed in an active client window. Closing
-  // this stream releases its foreground state without affecting agent work.
-  rpc SetForeground(stream ForegroundRequest) returns (stream ForegroundResponse);
   // Registers a client-identified submission. Retries with the same identity
   // and payload return the original acceptance without dispatching again.
   rpc Prompt(PromptSubmission) returns (PromptSubmissionResponse);
@@ -464,14 +461,6 @@ message AttachRequest {
   // events after it are replayed; an expired cursor returns DATA_LOSS.
   uint32 replay = 3;
 }
-
-message ForegroundRequest {
-  // Absent when the window is inactive or no session is selected.
-  optional string session = 1;
-}
-
-// Acknowledges that the foreground state has been applied.
-message ForegroundResponse {}
 
 // An ACP result arrives in TurnFinished; Bas interruptions use TurnInterrupted.
 message PromptSubmission {

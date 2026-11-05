@@ -13,7 +13,7 @@ use agent_client_protocol::{
 
 use crate::agent::AgentSpec;
 
-/// Resolve exactly as the daemon will launch, never using a shell or GUI PATH.
+/// Resolve exactly as the daemon will launch, never using a shell PATH.
 /// Relative paths (including relative PATH entries) use the daemon's cwd.
 pub fn resolve_program(spec: &AgentSpec) -> Option<PathBuf> {
     let command = spec.command()?;

@@ -659,40 +659,6 @@ impl Bas for Service {
         Ok(Response::new(Box::pin(stream)))
     }
 
-    type SetForegroundStream =
-        Pin<Box<dyn Stream<Item = Result<pb::ForegroundResponse, Status>> + Send + 'static>>;
-
-    async fn set_foreground(
-        &self,
-        request: Request<tonic::Streaming<pb::ForegroundRequest>>,
-    ) -> Result<Response<Self::SetForegroundStream>, Status> {
-        let service = self.clone();
-        let stream = futures::stream::try_unfold(
-            (request.into_inner(), None),
-            move |(mut requests, mut foreground)| {
-                let service = service.clone();
-                async move {
-                    let request = tokio::select! {
-                        biased;
-                        () = service.registry.stopped() => return Ok(None),
-                        request = requests.message() => request?,
-                    };
-                    let Some(request) = request else {
-                        return Ok(None);
-                    };
-                    foreground.take();
-                    foreground = if let Some(session) = request.session {
-                        Some(service.session(&session).await?.foreground())
-                    } else {
-                        None
-                    };
-                    Ok(Some((pb::ForegroundResponse {}, (requests, foreground))))
-                }
-            },
-        );
-        Ok(Response::new(Box::pin(stream)))
-    }
-
     async fn prompt(
         &self,
         request: Request<pb::PromptSubmission>,

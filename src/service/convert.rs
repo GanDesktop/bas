@@ -1,7 +1,7 @@
 //! Conversions between the domain model and the protobuf wire types.
 //!
 //! The server converts `model` values into protobuf; clients convert protobuf
-//! back so that TUI and GUI code shares the daemon's types instead of the
+//! back so that terminal code shares the daemon's types instead of the
 //! generated ones.
 
 use std::{path::PathBuf, str::FromStr};
