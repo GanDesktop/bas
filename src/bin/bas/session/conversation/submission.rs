@@ -152,10 +152,14 @@ impl Session {
                 TurnReceipt {
                     turn: submission.turn,
                     cursor: state.cursor.next(),
+                    request_id: None,
                 }
             };
             let request = submission.request;
-            let mut events = vec![EventKind::TurnStarted { turn: receipt.turn }];
+            let prepared = session.lock().agent.as_ref().expect("ready backend")
+                .prepare_prompt(request.clone()).map_err(SessionError::from)?;
+            let receipt = TurnReceipt { request_id: prepared.request_id(), ..receipt };
+            let mut events = vec![EventKind::TurnStarted { turn: receipt.turn, request_id: receipt.request_id }];
             events.extend(request.prompt.iter().cloned().map(|content| {
                 EventKind::Acp(acp::SessionUpdate::UserMessageChunk(
                     acp::ContentChunk::new(content).meta(request.meta.clone()),
@@ -176,7 +180,7 @@ impl Session {
                     .agent
                     .as_mut()
                     .expect("ready backend")
-                    .prompt(receipt.turn, request)
+                    .dispatch_prompt(receipt.turn, prepared)
             };
             if let Err(error) = dispatch {
                 let interrupted = if matches!(error, agent::Error::Backend { .. }) {

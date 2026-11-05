@@ -204,3 +204,35 @@ async fn closing_the_current_connection_cancels_requests_and_requires_new_regist
         json!({"action":"cancel"})
     );
 }
+
+#[tokio::test]
+async fn frontend_disconnect_preserves_agent_interaction_until_another_frontend_answers() {
+    let interactions = Arc::new(Elicitations::default());
+    let session = SessionId::new();
+    let connection = open(&interactions, session);
+    let mut subscription = interactions.subscribe(session);
+    let worker = {
+        let interactions = interactions.clone();
+        tokio::spawn(async move {
+            interactions
+                .request(session, connection, form(session))
+                .await
+        })
+    };
+    let request = pending(&mut subscription).await;
+    drop(subscription);
+    assert!(!worker.is_finished());
+    let reconnected = interactions.subscribe(session);
+    assert_eq!(reconnected.snapshots.borrow().pending[0], request);
+    interactions
+        .respond(
+            session,
+            &request.request_id,
+            json!({"action":"accept","content":{"project":"bas"}}),
+        )
+        .expect("answer");
+    assert_eq!(
+        worker.await.expect("task").expect("result")["action"],
+        "accept"
+    );
+}

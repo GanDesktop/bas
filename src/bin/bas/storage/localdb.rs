@@ -539,7 +539,14 @@ impl SqliteStore {
             .next()
             .ok_or(Error::Corrupt("acceptance event missing"))?;
         let acceptance = PromptAcceptance {
-            receipt: TurnReceipt { turn, cursor },
+            receipt: TurnReceipt {
+                turn,
+                cursor,
+                request_id: match &event.kind {
+                    bas::model::EventKind::TurnStarted { request_id, .. } => *request_id,
+                    _ => None,
+                },
+            },
             fingerprint,
         };
         validate_acceptance(&[event], acceptance)

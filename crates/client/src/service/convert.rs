@@ -268,6 +268,7 @@ impl From<model::TurnReceipt> for pb::TurnAccepted {
         Self {
             turn: receipt.turn.to_string(),
             cursor: receipt.cursor.raw(),
+            request_id: receipt.request_id.map(|id| id.to_string()),
         }
     }
 }
@@ -284,6 +285,11 @@ impl TryFrom<pb::TurnAccepted> for model::TurnReceipt {
         Ok(Self {
             turn: model::TurnId::from_str(&receipt.turn)?,
             cursor: model::Cursor::from_raw(receipt.cursor),
+            request_id: receipt
+                .request_id
+                .map(|id| id.parse())
+                .transpose()
+                .map_err(|_| Error::InvalidReceipt)?,
         })
     }
 }
@@ -414,9 +420,12 @@ impl From<&model::Event> for pb::Event {
         use pb::event::Kind;
         let kind = match &event.kind {
             model::EventKind::Acp(update) => Kind::AcpUpdate(update.into()),
-            model::EventKind::TurnStarted { turn } => Kind::TurnStarted(pb::TurnStarted {
-                turn: turn.to_string(),
-            }),
+            model::EventKind::TurnStarted { turn, request_id } => {
+                Kind::TurnStarted(pb::TurnStarted {
+                    request_id: request_id.map(|id| id.to_string()),
+                    turn: turn.to_string(),
+                })
+            }
             model::EventKind::TurnFinished { turn, result } => {
                 Kind::TurnFinished(pb::TurnFinished {
                     turn: turn.to_string(),
@@ -502,6 +511,11 @@ impl TryFrom<pb::Event> for model::Event {
             kind: match event.kind.ok_or(Error::MissingEventKind)? {
                 Kind::AcpUpdate(payload) => model::EventKind::Acp(payload.decode()?),
                 Kind::TurnStarted(value) => model::EventKind::TurnStarted {
+                    request_id: value
+                        .request_id
+                        .map(|id| id.parse())
+                        .transpose()
+                        .map_err(|_| Error::InvalidReceipt)?,
                     turn: value.turn.parse()?,
                 },
                 Kind::TurnFinished(value) => model::EventKind::TurnFinished {

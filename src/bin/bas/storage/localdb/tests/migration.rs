@@ -94,7 +94,10 @@ async fn schema_eight_rebuilds_prompt_metadata_without_rewriting_packed_chunks()
     let turn = TurnId::new();
     let mut events = Vec::new();
     for kind in [
-        EventKind::TurnStarted { turn },
+        EventKind::TurnStarted {
+            request_id: None,
+            turn,
+        },
         EventKind::Acp(acp::SessionUpdate::UserMessageChunk(
             acp::ContentChunk::new("old prompt".into()),
         )),
@@ -256,7 +259,10 @@ async fn schema_six_mixed_history_migrates_losslessly_with_lazy_catalog() {
     for (index, turn) in turns.into_iter().enumerate() {
         let mut events = Vec::new();
         for kind in [
-            EventKind::TurnStarted { turn },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
             EventKind::Acp(acp::SessionUpdate::AgentMessageChunk(
                 acp::ContentChunk::new("repeat ".repeat(1000).into()),
             )),
@@ -330,6 +336,7 @@ async fn schema_six_mixed_history_migrates_losslessly_with_lazy_catalog() {
         store.acceptance(meta.id, turns[0]).await.expect("receipt"),
         Some(PromptAcceptance {
             receipt: TurnReceipt {
+                request_id: None,
                 turn: turns[0],
                 cursor: Cursor::from_raw(2)
             },
@@ -380,7 +387,10 @@ async fn failed_migration_rolls_back_without_dropping_original_history() {
     let event = Event::new(
         meta.id,
         Cursor::from_raw(1),
-        EventKind::TurnStarted { turn },
+        EventKind::TurnStarted {
+            request_id: None,
+            turn,
+        },
     );
     raw_event(&store, &event).await;
     block(&store, turn, std::slice::from_ref(&event), false).await;

@@ -50,6 +50,7 @@ fn identities_cross_turns_but_roles_are_separate() {
         SessionId::new(),
         Cursor::from_raw(2),
         EventKind::TurnStarted {
+            request_id: None,
             turn: crate::model::TurnId::new(),
         },
     ));
@@ -83,7 +84,10 @@ fn lifecycle_dependencies_preserve_completion_and_failure_suppression() {
     index.observe(&Event::new(
         session,
         Cursor::from_raw(2),
-        EventKind::TurnStarted { turn },
+        EventKind::TurnStarted {
+            request_id: None,
+            turn,
+        },
     ));
     let finished = Event::new(
         session,
@@ -190,7 +194,10 @@ fn turn_boundaries_share_message_identity_and_legacy_adjacency_rules() {
     index.observe(&Event::new(
         SessionId::new(),
         Cursor::from_raw(10),
-        EventKind::TurnStarted { turn },
+        EventKind::TurnStarted {
+            request_id: None,
+            turn,
+        },
     ));
     assert_eq!(
         index

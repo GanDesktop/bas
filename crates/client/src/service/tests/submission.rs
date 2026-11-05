@@ -32,6 +32,7 @@ fn malformed_submission_envelopes_do_not_become_prompts() {
 #[test]
 fn acceptance_and_explicit_rejections_round_trip_separately_from_acp_results() {
     let mut outcomes = vec![PromptSubmissionOutcome::Accepted(TurnReceipt {
+        request_id: Some(uuid::Uuid::new_v4()),
         turn: TurnId::new(),
         cursor: Cursor::from_raw(123),
     })];

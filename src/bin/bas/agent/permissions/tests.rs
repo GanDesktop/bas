@@ -106,38 +106,40 @@ async fn invalid_options_and_wrong_sessions_preserve_pending_request() {
 }
 
 #[tokio::test]
-async fn last_approver_disconnect_cancels_instead_of_falling_back_to_allow() {
+async fn disconnected_approvers_leave_requests_pending_for_reconnection() {
     let permissions = Arc::new(Permissions::default());
     let session = SessionId::new();
     let mut first = permissions.subscribe(session);
     let second = permissions.subscribe(session);
     let host = permissions.host(Arc::new(LocalHost::new(PermissionPolicy::Allow)));
     let answer = tokio::spawn(async move { host.request_permission(request(session)).await });
-    let _pending = next_permission(&mut first).await;
+    let pending = next_permission(&mut first).await;
     drop(first);
-    assert!(!answer.is_finished());
     drop(second);
+    assert!(!answer.is_finished());
+    let reconnected = permissions.subscribe(session);
     assert_eq!(
-        answer
-            .await
-            .expect("request task")
-            .expect("approval outcome"),
-        acp::RequestPermissionOutcome::Cancelled
+        reconnected.snapshots.borrow()[0].request_id,
+        pending.request_id
     );
+    permissions
+        .respond(session, &pending.request_id, selected("allow-once"))
+        .expect("reply after reconnect");
     assert_eq!(
-        permissions
-            .lock()
-            .get(&session)
-            .expect("interactive session stays registered")
-            .viewers,
-        0
+        answer.await.expect("task").expect("answer"),
+        selected("allow-once")
     );
-    let host = permissions.host(Arc::new(LocalHost::new(PermissionPolicy::Allow)));
+    drop(reconnected);
+    let host = permissions.host(Arc::new(LocalHost::default()));
+    let answer = tokio::spawn(async move { host.request_permission(request(session)).await });
+    let mut reconnected = permissions.subscribe(session);
+    let pending = next_permission(&mut reconnected).await;
+    permissions
+        .respond(session, &pending.request_id, selected("reject-once"))
+        .expect("new request");
     assert_eq!(
-        host.request_permission(request(session))
-            .await
-            .expect("detached interactive policy"),
-        acp::RequestPermissionOutcome::Cancelled
+        answer.await.expect("task").expect("answer"),
+        selected("reject-once")
     );
 }
 

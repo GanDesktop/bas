@@ -45,7 +45,6 @@ struct Prepared {
 struct State {
     prepared: HashMap<String, Prepared>,
     active: HashMap<String, Arc<Connection>>,
-    controllers: HashMap<String, String>,
 }
 struct Connection {
     target: pb::prepare_acp_request::Target,
@@ -126,7 +125,6 @@ impl Drop for Lease {
     fn drop(&mut self) {
         let mut state = self.state.lock().expect("connection state");
         state.active.remove(&self.id);
-        state.controllers.retain(|_, owner| owner != &self.id);
     }
 }
 
@@ -202,16 +200,6 @@ impl<B: Bas + 'static> AcpTransport for Gateway<B> {
                 .ok_or_else(|| {
                     Status::not_found("prepared connection expired or already consumed")
                 })?;
-            if prepared.interactive
-                && let pb::prepare_acp_request::Target::Session(session) = &prepared.target
-            {
-                if state.controllers.contains_key(session) {
-                    return Err(Status::already_exists(
-                        "session already has an ACP controller",
-                    ));
-                }
-                state.controllers.insert(session.clone(), id.clone());
-            }
             let connection = Arc::new(Connection {
                 target: prepared.target,
                 interactive: prepared.interactive,

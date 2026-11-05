@@ -753,14 +753,34 @@ impl AgentTrait for Session {
         })
     }
 
-    fn prompt(&mut self, turn: TurnId, mut request: v1::PromptRequest) -> Result<(), Error> {
+    fn prepare_prompt(
+        &self,
+        mut request: v1::PromptRequest,
+    ) -> Result<super::PreparedPrompt, Error> {
+        request.session_id = self.acp_session.clone();
+        Ok(super::PreparedPrompt::Acp(
+            self.connection
+                .prepare_request(request.to_untyped_message()?),
+        ))
+    }
+
+    fn prompt(&mut self, turn: TurnId, request: v1::PromptRequest) -> Result<(), Error> {
+        let prepared = self.prepare_prompt(request)?;
+        self.dispatch_prompt(turn, prepared)
+    }
+
+    fn dispatch_prompt(
+        &mut self,
+        turn: TurnId,
+        prepared: super::PreparedPrompt,
+    ) -> Result<(), Error> {
+        let super::PreparedPrompt::Acp(request) = prepared else {
+            return Err(Error::backend("acp", "missing prepared ACP input"));
+        };
         let activity = self
             .activity
             .outbound()
             .ok_or_else(|| Error::backend("acp", "transport released"))?;
-        request.session_id = self.acp_session.clone();
-        // Keep RPC rejection distinct from a malformed success payload.
-        let request = request.to_untyped_message()?;
         let connection = self.connection.clone();
         let updates = self.updates.clone();
         let state = Arc::clone(&self.state);
@@ -786,7 +806,7 @@ impl AgentTrait for Session {
                     .await;
                 return Ok(());
             }
-            let response = connection.send_request(request).block_task();
+            let response = request.block_task();
             tokio::pin!(response);
             let response = tokio::select! {
                 biased;

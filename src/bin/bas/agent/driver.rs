@@ -119,6 +119,26 @@ pub enum TurnUpdate {
     CancelledBeforeDispatch,
 }
 
+/// An input reserved before the session publishes its admission event.
+pub enum PreparedPrompt {
+    Local(acp::PromptRequest),
+    Acp(agent_client_protocol::PreparedRequest<serde_json::Value>),
+}
+impl PreparedPrompt {
+    /// The SDK allocates UUID string IDs on the persistent Agent connection.
+    pub fn request_id(&self) -> Option<uuid::Uuid> {
+        match self {
+            Self::Local(_) => None,
+            Self::Acp(request) => match request.id() {
+                agent_client_protocol::schema::v1::RequestId::Str(id) => {
+                    Some(id.parse().expect("SDK UUID request ID"))
+                }
+                _ => unreachable!("SDK allocates UUID request IDs"),
+            },
+        }
+    }
+}
+
 /// Backend calls only enqueue work; they must not block or re-enter the session.
 /// Dropping a backend must cancel all tasks and release its child processes.
 #[async_trait]
@@ -128,6 +148,23 @@ pub trait Agent: Send {
     /// # Errors
     /// Returns an error if the content is unsupported or the backend is unavailable.
     fn prompt(&mut self, turn: TurnId, request: acp::PromptRequest) -> Result<(), Error>;
+
+    /// # Errors
+    /// Returns a payload or connection error before admission is committed.
+    fn prepare_prompt(&self, request: acp::PromptRequest) -> Result<PreparedPrompt, Error> {
+        Ok(PreparedPrompt::Local(request))
+    }
+
+    /// # Errors
+    /// Returns a dispatch failure after admission has been committed.
+    fn dispatch_prompt(&mut self, turn: TurnId, request: PreparedPrompt) -> Result<(), Error> {
+        match request {
+            PreparedPrompt::Local(request) => self.prompt(turn, request),
+            PreparedPrompt::Acp(_) => {
+                Err(Error::backend("backend", "unexpected ACP prepared input"))
+            }
+        }
+    }
 
     fn initialization(&self) -> Option<acp::InitializeResponse> {
         None

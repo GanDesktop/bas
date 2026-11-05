@@ -58,6 +58,8 @@ pub enum SessionStatus {
 /// or successful execution. The cursor identifies its committed start event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TurnReceipt {
+    /// Actual outgoing Agent ACP request ID, absent for embedded/legacy turns.
+    pub request_id: Option<uuid::Uuid>,
     pub turn: TurnId,
     pub cursor: Cursor,
 }
@@ -186,7 +188,7 @@ impl SessionMeta {
                     self.active_turn = None;
                 }
             }
-            EventKind::TurnStarted { turn } => {
+            EventKind::TurnStarted { turn, .. } => {
                 self.status = SessionStatus::Working;
                 self.active_turn = Some(*turn);
             }

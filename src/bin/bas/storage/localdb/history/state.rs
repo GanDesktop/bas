@@ -152,7 +152,7 @@ pub(in crate::storage::localdb) async fn index(
                         previous.sealed = true;
                         previous.save(tx, id).await?;
                     }
-                    let turn = if let EventKind::TurnStarted { turn } = event.kind {
+                    let turn = if let EventKind::TurnStarted { turn, .. } = event.kind {
                         Some(turn)
                     } else {
                         None

@@ -1,4 +1,4 @@
-//! Connection-scoped user interactions with an attached frontend.
+//! Agent-connection-scoped interactions shared by frontend subscribers.
 
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -103,7 +103,6 @@ impl Drop for Subscription {
         {
             entry.viewers -= 1;
             if entry.viewers == 0 {
-                entry.cancel();
                 if entry.connection.is_none() {
                     state.remove(&self.session);
                 }
@@ -283,7 +282,7 @@ impl Elicitations {
             let mut state = self.lock();
             let Some(entry) = state
                 .get_mut(&session)
-                .filter(|entry| entry.viewers > 0 && entry.connection == Some(connection))
+                .filter(|entry| entry.connection == Some(connection))
             else {
                 return Ok(json!({"action":"cancel"}));
             };

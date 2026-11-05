@@ -222,7 +222,7 @@ impl Timeline {
                 )?,
                 update => crate::safe::safe_writeln!(stdout, "{}", serde_json::to_string(update)?)?,
             },
-            EventKind::TurnStarted { turn } => {
+            EventKind::TurnStarted { turn, .. } => {
                 self.interruption = None;
                 crate::safe::safe_writeln!(
                     stdout,

@@ -19,7 +19,10 @@ async fn unrelated_terminal_does_not_seal_or_pack_the_active_turn() {
         let mut expected = batch(
             &mut meta,
             [
-                EventKind::TurnStarted { turn },
+                EventKind::TurnStarted {
+                    request_id: None,
+                    turn,
+                },
                 chunk("still active"),
                 terminal,
             ],
@@ -93,7 +96,10 @@ async fn late_control_updates_do_not_reopen_packed_turns_or_add_page_boundaries(
     let first = batch(
         &mut meta,
         [
-            EventKind::TurnStarted { turn },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
             chunk("first"),
             finish(turn),
         ],
@@ -151,7 +157,10 @@ async fn late_control_updates_do_not_reopen_packed_turns_or_add_page_boundaries(
     let second = batch(
         &mut meta,
         [
-            EventKind::TurnStarted { turn: next },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn: next,
+            },
             chunk("second"),
             finish(next),
         ],
@@ -214,7 +223,10 @@ async fn repacking_preserves_whole_source_chunks_at_size_boundaries() {
     let events = batch(
         &mut meta,
         [
-            EventKind::TurnStarted { turn },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
             chunk("a".repeat(MAX_BLOCK_BYTES * 3 / 8)),
             chunk("b".repeat(MAX_BLOCK_BYTES * 3 / 8)),
             chunk("c".repeat(MAX_BLOCK_BYTES * 3 / 8)),

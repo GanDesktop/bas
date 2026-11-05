@@ -348,7 +348,7 @@ fn validate_acceptance(events: &[Event], acceptance: PromptAcceptance) -> Result
     if acceptance.receipt.cursor == Cursor::START
         || !events.iter().any(|event| {
             event.cursor == acceptance.receipt.cursor
-                && matches!(event.kind, bas::model::EventKind::TurnStarted { turn } if turn == acceptance.receipt.turn)
+                && matches!(event.kind, bas::model::EventKind::TurnStarted { turn, request_id } if turn == acceptance.receipt.turn && request_id == acceptance.receipt.request_id)
         })
     {
         return Err(Error::InvalidCommit("acceptance requires its TurnStarted event"));

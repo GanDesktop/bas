@@ -45,6 +45,7 @@ fn malformed_envelopes_and_acp_payloads_are_rejected() {
         Err(Error::Json(_))
     ));
     let mut wire = pb::Event::from(&event(EventKind::TurnStarted {
+        request_id: None,
         turn: TurnId::new(),
     }));
     wire.session = "not-a-session".into();

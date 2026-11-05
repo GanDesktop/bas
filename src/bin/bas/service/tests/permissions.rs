@@ -1,7 +1,7 @@
 use super::*;
 use bas::{acp, model::PendingPermission};
 
-fn approval_request(session: bas::model::SessionId) -> acp::RequestPermissionRequest {
+pub(super) fn approval_request(session: bas::model::SessionId) -> acp::RequestPermissionRequest {
     acp::RequestPermissionRequest::new(
         session.to_string(),
         acp::ToolCallUpdate::new(
@@ -130,7 +130,7 @@ async fn approval_rpc_validates_options_and_publishes_authoritative_snapshots() 
 }
 
 #[tokio::test]
-async fn disconnecting_real_grpc_approval_stream_cancels_pending_request() {
+async fn disconnecting_real_grpc_approval_stream_preserves_pending_request() {
     use crate::agent::PermissionPolicy;
     use tokio_stream::wrappers::TcpListenerStream;
     let registry = registry(100);
@@ -172,13 +172,27 @@ async fn disconnecting_real_grpc_approval_stream_cancels_pending_request() {
     assert_eq!(snapshot.pending.len(), 1);
     assert!(!answer.is_finished());
     drop(stream);
+    let mut reconnected = client
+        .watch_permissions(pb::WatchPermissionsRequest {
+            session: session.id().to_string(),
+        })
+        .await
+        .expect("reconnect")
+        .into_inner();
+    let restored = reconnected
+        .message()
+        .await
+        .expect("snapshot")
+        .expect("pending snapshot");
+    assert_eq!(restored.pending, snapshot.pending);
+    assert!(!answer.is_finished());
+    client
+        .respond_permission(response(&session, &snapshot.pending[0].request_id, "allow"))
+        .await
+        .expect("answer");
     assert_eq!(
-        tokio::time::timeout(Duration::from_secs(2), answer)
-            .await
-            .expect("disconnect cancels outstanding approval")
-            .expect("request task")
-            .expect("approval outcome"),
-        acp::RequestPermissionOutcome::Cancelled
+        answer.await.expect("task").expect("outcome"),
+        acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new("allow"))
     );
     registry.shutdown().await;
     server.abort();

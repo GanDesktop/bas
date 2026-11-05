@@ -96,9 +96,16 @@ async fn completed_turn_packs_payloads_and_indexes_without_changing_any_reader()
         .await
         .expect("metadata event");
     let turn = TurnId::new();
-    let start = batch(&mut meta, [EventKind::TurnStarted { turn }]);
+    let start = batch(
+        &mut meta,
+        [EventKind::TurnStarted {
+            request_id: None,
+            turn,
+        }],
+    );
     let accepted = PromptAcceptance {
         receipt: TurnReceipt {
+            request_id: None,
             turn,
             cursor: start[0].cursor,
         },
@@ -266,7 +273,10 @@ async fn worker_packs_after_commit_and_a_failed_pack_does_not_fail_the_turn() {
     let first = batch(
         &mut meta,
         [
-            EventKind::TurnStarted { turn },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
             chunk("kept raw"),
             finish(turn),
         ],
@@ -307,7 +317,10 @@ async fn worker_packs_after_commit_and_a_failed_pack_does_not_fail_the_turn() {
     let second = batch(
         &mut meta,
         [
-            EventKind::TurnStarted { turn },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
             chunk("packed"),
             finish(turn),
         ],
@@ -354,7 +367,10 @@ async fn bounded_blocks_interleave_with_oversized_raw_events() {
     let events = batch(
         &mut meta,
         [
-            EventKind::TurnStarted { turn },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
             chunk("a".repeat(MAX_BLOCK_BYTES / 2)),
             chunk("b".repeat(MAX_BLOCK_BYTES + 1)),
             chunk("c".repeat(MAX_BLOCK_BYTES / 2)),
@@ -410,7 +426,10 @@ async fn packed_context_and_cross_turn_dependencies_match_memory_even_after_rein
     for index in 0..6 {
         let turn = TurnId::new();
         let mut kinds = vec![
-            EventKind::TurnStarted { turn },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
             chunk(format!("turn {index}")),
         ];
         if index == 0 {
@@ -553,7 +572,10 @@ async fn readers_reject_overlaps_but_do_not_decode_unrequested_blocks() {
     let first = batch(
         &mut meta,
         [
-            EventKind::TurnStarted { turn },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
             chunk("first"),
             finish(turn),
         ],
@@ -597,7 +619,10 @@ async fn readers_reject_overlaps_but_do_not_decode_unrequested_blocks() {
     let second = batch(
         &mut meta,
         [
-            EventKind::TurnStarted { turn },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
             chunk("second"),
             finish(turn),
         ],

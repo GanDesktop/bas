@@ -31,6 +31,8 @@ pub enum EventKind {
     Subagent(acp::SessionNotification),
     TurnStarted {
         turn: TurnId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        request_id: Option<uuid::Uuid>,
     },
     TurnFinished {
         turn: TurnId,

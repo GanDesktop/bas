@@ -91,7 +91,10 @@ async fn navigation_contract(storage: &dyn Storage) {
             prompt_text(None, "mid"),
             prompt_text(None, "dle"),
             chunk(Some("answer-2")),
-            EventKind::TurnStarted { turn },
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
             prompt_text(Some("live"), "li"),
             independent(),
             prompt_text(Some("live"), "ve"),
@@ -224,6 +227,7 @@ async fn bounded_preview(storage: &dyn Storage) {
         storage,
         &mut meta,
         vec![EventKind::TurnStarted {
+            request_id: None,
             turn: TurnId::new(),
         }],
     )
@@ -303,11 +307,13 @@ async fn window_contract(storage: &dyn Storage) {
             prompt("first"),
             chunk(Some("cross-turn")),
             EventKind::TurnStarted {
+                request_id: None,
                 turn: TurnId::new(),
             },
             independent(),
             chunk(Some("cross-turn")),
             EventKind::TurnStarted {
+                request_id: None,
                 turn: TurnId::new(),
             },
             independent(),
@@ -538,7 +544,10 @@ async fn long_turn_contract(storage: &dyn Storage) {
     let previous = append(storage, &mut meta, vec![prompt("old"), chunk(Some("old"))]).await;
     let turn = TurnId::new();
     let mut kinds = vec![
-        EventKind::TurnStarted { turn },
+        EventKind::TurnStarted {
+            request_id: None,
+            turn,
+        },
         prompt("long"),
         prompt("long"),
     ];
@@ -626,6 +635,7 @@ async fn memory_eviction_is_explicit_but_independent_suffix_works() {
         &storage,
         &mut meta,
         vec![EventKind::TurnStarted {
+            request_id: None,
             turn: TurnId::new(),
         }],
     )
@@ -662,6 +672,7 @@ async fn memory_replacement_usage_does_not_require_evicted_snapshot() {
         &mut meta,
         vec![
             EventKind::TurnStarted {
+                request_id: None,
                 turn: TurnId::new(),
             },
             usage(),
@@ -803,6 +814,7 @@ async fn memory_never_returns_a_turn_with_an_evicted_start() {
         &mut meta,
         vec![
             EventKind::TurnStarted {
+                request_id: None,
                 turn: TurnId::new(),
             },
             independent(),

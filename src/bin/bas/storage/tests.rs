@@ -246,11 +246,15 @@ fn accepted_event(state: &mut SessionMeta) -> (Event, PromptAcceptance) {
     let event = Event::new(
         state.id,
         state.revision.next(),
-        EventKind::TurnStarted { turn },
+        EventKind::TurnStarted {
+            request_id: None,
+            turn,
+        },
     );
     assert!(state.apply_event(&event));
     let acceptance = PromptAcceptance {
         receipt: TurnReceipt {
+            request_id: None,
             turn,
             cursor: event.cursor,
         },

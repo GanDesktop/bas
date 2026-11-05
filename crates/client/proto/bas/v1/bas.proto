@@ -424,6 +424,7 @@ message AcpPayload {
 
 message TurnStarted {
   string turn = 1;
+  optional string request_id = 2;
 }
 
 message TurnFinished {
@@ -542,6 +543,8 @@ message PromptAcceptanceResponse {
 // Bas has registered this submission, not necessarily dispatched it to ACP.
 message TurnAccepted {
   string turn = 1;
+  // UUID string ID allocated by BAS on its Agent ACP connection.
+  optional string request_id = 3;
   // Cursor of the committed TurnStarted event; always greater than zero.
   uint64 cursor = 2;
 }

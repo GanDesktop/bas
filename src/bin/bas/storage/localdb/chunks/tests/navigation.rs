@@ -13,7 +13,10 @@ async fn packed_navigation_rebuilds_metadata_and_never_reads_unrequested_bodies(
         let events = batch(
             &mut meta,
             [
-                EventKind::TurnStarted { turn },
+                EventKind::TurnStarted {
+                    request_id: None,
+                    turn,
+                },
                 EventKind::Acp(acp::SessionUpdate::UserMessageChunk(
                     acp::ContentChunk::new(format!("prompt-{index}").into()),
                 )),

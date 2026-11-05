@@ -296,6 +296,7 @@ async fn oversized_safe_window_errors_instead_of_returning_half_a_message() {
     let text = "x".repeat(bas::service::MAX_MESSAGE_SIZE / 2);
     let mut fixture = fixture(vec![
         EventKind::TurnStarted {
+            request_id: None,
             turn: bas::model::TurnId::new(),
         },
         prompt(0),

@@ -53,7 +53,10 @@ async fn schema_five_upgrade_moves_history_without_packing_and_preserves_receipt
         .expect("create");
     let turn = TurnId::new();
     let events: Vec<_> = [
-        EventKind::TurnStarted { turn },
+        EventKind::TurnStarted {
+            request_id: None,
+            turn,
+        },
         EventKind::TitleChanged {
             title: "legacy turn".into(),
         },
@@ -112,6 +115,7 @@ async fn schema_five_upgrade_moves_history_without_packing_and_preserves_receipt
         store.acceptance(meta.id, turn).await.expect("receipt"),
         Some(PromptAcceptance {
             receipt: TurnReceipt {
+                request_id: None,
                 turn,
                 cursor: Cursor::from_raw(1)
             },
@@ -265,7 +269,10 @@ async fn schema_three_upgrade_preserves_authoritative_records_and_rebuilds_turns
         EventKind::TitleChanged {
             title: "initial".into(),
         },
-        EventKind::TurnStarted { turn },
+        EventKind::TurnStarted {
+            request_id: None,
+            turn,
+        },
         EventKind::TitleChanged {
             title: "turn activity".into(),
         },
@@ -324,6 +331,7 @@ async fn schema_three_upgrade_preserves_authoritative_records_and_rebuilds_turns
         store.acceptance(meta.id, turn).await.expect("acceptance"),
         Some(PromptAcceptance {
             receipt: TurnReceipt {
+                request_id: None,
                 turn,
                 cursor: Cursor::from_raw(2)
             },
@@ -359,4 +367,45 @@ async fn schema_three_upgrade_preserves_authoritative_records_and_rebuilds_turns
         .apply(&store.db)
         .await
         .expect("idempotent upgrade");
+}
+
+#[tokio::test]
+async fn acceptance_preserves_agent_request_id_after_database_reopen() {
+    use crate::storage::Storage;
+    let directory = tempfile::tempdir().expect("directory");
+    let path = directory.path().join("private/sessions.sqlite3");
+    let store = LocalDb::open(&path).await.expect("database");
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "embedded".into(),
+        Owner::current(),
+    );
+    store.create(meta.clone(), None).await.expect("session");
+    let turn = TurnId::new();
+    let request_id = Some(uuid::Uuid::new_v4());
+    let event = Event::new(
+        meta.id,
+        meta.revision.next(),
+        EventKind::TurnStarted { turn, request_id },
+    );
+    meta.apply_event(&event);
+    let acceptance = PromptAcceptance {
+        receipt: TurnReceipt {
+            turn,
+            cursor: event.cursor,
+            request_id,
+        },
+        fingerprint: [7; 32],
+    };
+    store
+        .commit(meta.clone(), &[event], Some(acceptance))
+        .await
+        .expect("admission");
+    drop(store);
+    let store = LocalDb::open(&path).await.expect("reopen");
+    assert_eq!(
+        store.acceptance(meta.id, turn).await.expect("receipt"),
+        Some(acceptance)
+    );
 }

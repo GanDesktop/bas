@@ -964,3 +964,66 @@ async fn configuration_commit_survives_cancelled_waiter_and_later_notification()
         wait_for_exit(&directory).await;
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn admission_receipt_and_observed_input_use_the_actual_agent_request_id() {
+    let directory = tempfile::tempdir().expect("fixture directory");
+    let registry = fixture_with_limits("normal", &directory, Limits::default());
+    let session = registry.create(request()).await.expect("session");
+    let submission = bas::model::PromptSubmission::new(v1::PromptRequest::new(
+        session.id().to_string(),
+        vec!["shared input".into()],
+    ));
+    let receipt = session
+        .accept_prompt(submission.clone())
+        .await
+        .expect("admitted");
+    let id = receipt.request_id.expect("Agent request ID");
+    let raw = tokio::time::timeout(TIMEOUT, async {
+        loop {
+            if let Ok(bytes) = tokio::fs::read(directory.path().join("pid.request")).await {
+                if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                    break value;
+                }
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("Agent receives prompt");
+    assert_eq!(raw["id"], id.to_string());
+    for _ in 0..2 {
+        let mut observer = session
+            .attach(AttachOptions {
+                cursor: Some(bas::model::Cursor::from_raw(receipt.cursor.raw() - 1)),
+                replay: 0,
+            })
+            .await
+            .expect("observer");
+        let start = observer.recv().await.expect("input event");
+        assert!(
+            matches!(start.kind, bas::model::EventKind::TurnStarted { turn, request_id: Some(observed) } if turn == receipt.turn && observed == id)
+        );
+        assert!(matches!(
+            observer.recv().await.expect("user message").kind,
+            bas::model::EventKind::Acp(v1::SessionUpdate::UserMessageChunk(_))
+        ));
+    }
+
+    assert_eq!(
+        session
+            .prompt_acceptance(receipt.turn)
+            .await
+            .expect("lookup"),
+        Some(receipt)
+    );
+    assert_eq!(
+        session
+            .accept_prompt(submission)
+            .await
+            .expect("same admission"),
+        receipt
+    );
+    registry.shutdown().await;
+}

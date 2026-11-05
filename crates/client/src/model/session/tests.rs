@@ -16,7 +16,10 @@ fn stale_or_foreign_events_cannot_overwrite_a_newer_snapshot() {
     let started = Event::new(
         meta.id,
         Cursor::from_raw(10),
-        EventKind::TurnStarted { turn: active },
+        EventKind::TurnStarted {
+            request_id: None,
+            turn: active,
+        },
     );
     assert!(meta.apply_event(&started));
     let snapshot = meta.clone();
@@ -51,7 +54,10 @@ fn completion_and_terminal_states_clear_the_active_turn() {
     assert!(meta.apply_event(&Event::new(
         meta.id,
         Cursor::from_raw(1),
-        EventKind::TurnStarted { turn },
+        EventKind::TurnStarted {
+            request_id: None,
+            turn
+        },
     )));
     assert!(meta.apply_event(&Event::new(
         meta.id,
@@ -70,6 +76,7 @@ fn completion_and_terminal_states_clear_the_active_turn() {
         meta.id,
         Cursor::from_raw(3),
         EventKind::TurnStarted {
+            request_id: None,
             turn: TurnId::new()
         },
     )));
@@ -122,7 +129,13 @@ fn runtime_interruption_clears_activity_without_inventing_an_acp_result() {
     let mut meta = metadata();
     let turn = TurnId::new();
     for (cursor, kind) in [
-        (1, EventKind::TurnStarted { turn }),
+        (
+            1,
+            EventKind::TurnStarted {
+                request_id: None,
+                turn,
+            },
+        ),
         (2, EventKind::ArchiveChanged { archived: true }),
         (
             3,

@@ -269,7 +269,7 @@ async fn callbacks<B: Bas + 'static>(
                 let backend = permissions_backend.clone();
                 let session = permission_session.clone();
                 request.on_receiving_result(async move |result| {
-                    let response = result.unwrap_or(json!({"outcome":{"outcome":"cancelled"}}));
+                    let Ok(response) = result else { return Ok(()) };
                     let response = backend
                         .respond_permission(Request::new(pb::RespondPermissionRequest {
                             session,
@@ -306,6 +306,7 @@ async fn callbacks<B: Bas + 'static>(
             let ids: std::collections::HashSet<_> = snapshot
                 .pending
                 .iter()
+                .filter(|entry| !entry.answered)
                 .map(|entry| entry.request_id.clone())
                 .collect();
             pending.retain(
@@ -342,14 +343,6 @@ async fn callbacks<B: Bas + 'static>(
                 fields.remove("requestId");
                 fields.insert("sessionId".into(), json!(session));
                 if !connection.supports_elicitation(&params) {
-                    backend
-                        .respond_elicitation(Request::new(pb::RespondElicitationRequest {
-                            session: session.clone(),
-                            request_id: elicitation.request_id,
-                            response: Some(payload(json!({"action":"cancel"}))),
-                        }))
-                        .await
-                        .map_err(status)?;
                     continue;
                 }
                 let request =
@@ -361,11 +354,12 @@ async fn callbacks<B: Bas + 'static>(
                 let backend = backend.clone();
                 let session = session.clone();
                 request.on_receiving_result(async move |result| {
+                    let Ok(answer) = result else { return Ok(()) };
                     let response = backend
                         .respond_elicitation(Request::new(pb::RespondElicitationRequest {
                             session,
                             request_id: elicitation.request_id,
-                            response: Some(payload(result.unwrap_or(json!({"action":"cancel"})))),
+                            response: Some(payload(answer)),
                         }))
                         .await;
                     // Cancellation can remove the backend request before its response arrives.

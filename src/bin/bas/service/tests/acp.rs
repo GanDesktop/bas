@@ -145,7 +145,7 @@ async fn sdk_prompt_survives_disconnect_and_reconnect_without_redispatch() {
 }
 
 #[tokio::test]
-async fn prepared_stream_is_single_use_scoped_and_has_one_controller() {
+async fn prepared_stream_is_single_use_scoped_and_allows_multiple_subscribers() {
     let registry = registry(100);
     let session = create(&registry).await;
     let other = create(&registry).await;
@@ -159,26 +159,8 @@ async fn prepared_stream_is_single_use_scoped_and_has_one_controller() {
         reused.connect().await.err().expect("used ticket").code(),
         Code::NotFound
     );
-    let mut competing = prepare(
-        server.client.channel(),
-        pb::PrepareAcpRequest {
-            target: Some(pb::prepare_acp_request::Target::Session(
-                session.id().to_string(),
-            )),
-            interactive: true,
-        },
-    )
-    .await
-    .expect("prepare second");
-    assert_eq!(
-        competing
-            .connect()
-            .await
-            .err()
-            .expect("single controller")
-            .code(),
-        Code::AlreadyExists
-    );
+    let competing = connect(&server.client, &session, true).await;
+    assert_ne!(link.prepared.id, competing.prepared.id);
     let error = link
         .peer
         .send_request(acp::PromptRequest::new(
@@ -191,4 +173,93 @@ async fn prepared_stream_is_single_use_scoped_and_has_one_controller() {
     assert_eq!(error.code, acp::ErrorCode::InvalidParams);
     drop(link);
     registry.shutdown().await;
+}
+
+async fn interactive(
+    client: &Client,
+    session: &crate::session::Session,
+    elicitation: bool,
+) -> (Link, tokio::sync::mpsc::Receiver<Incoming>) {
+    let prepared = prepare(
+        client.channel(),
+        pb::PrepareAcpRequest {
+            target: Some(pb::prepare_acp_request::Target::Session(
+                session.id().to_string(),
+            )),
+            interactive: true,
+        },
+    )
+    .await
+    .expect("prepare subscriber");
+    let (link, events) = Link::open(prepared).await.expect("open subscriber");
+    let capabilities = if elicitation {
+        acp::ClientCapabilities::new().elicitation(
+            acp::ElicitationCapabilities::new().form(acp::ElicitationFormCapabilities::new()),
+        )
+    } else {
+        acp::ClientCapabilities::new()
+    };
+    link.peer
+        .send_request(
+            acp::InitializeRequest::new(sdk::schema::ProtocolVersion::V1)
+                .client_capabilities(capabilities),
+        )
+        .block_task()
+        .await
+        .expect("initialize");
+    link.peer
+        .send_request(acp::LoadSessionRequest::new(
+            session.id().to_string(),
+            session.meta().cwd.expect("cwd"),
+        ))
+        .block_task()
+        .await
+        .expect("load");
+    (link, events)
+}
+
+async fn callback(events: &mut tokio::sync::mpsc::Receiver<Incoming>) -> sdk::Responder {
+    loop {
+        if let Incoming::Request(_, responder) = events.recv().await.expect("callback stream") {
+            return responder;
+        }
+    }
+}
+
+#[tokio::test]
+async fn interactive_subscribers_share_requests_without_owning_the_agent() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let registry = registry(100);
+        let session = create(&registry).await;
+        let server = serve(registry.clone()).await;
+        let (first, mut first_events) = interactive(&server.client, &session, false).await;
+        let (_second, mut second_events) = interactive(&server.client, &session, true).await;
+        let host = registry.permissions().host(Arc::new(LocalHost::default()));
+        let id = session.id();
+        let answer = tokio::spawn(async move { host.request_permission(super::permissions::approval_request(id)).await });
+        let first_reply = callback(&mut first_events).await;
+        let second_reply = callback(&mut second_events).await;
+        drop(first);
+        drop(first_events);
+        drop(first_reply);
+        second_reply.respond_with_result(Ok(serde_json::json!({"outcome":{"outcome":"selected","optionId":"allow"}}))).expect("answer from remaining frontend");
+        assert_eq!(answer.await.expect("task").expect("answer"), acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new("allow")));
+
+        let (_third, mut third_events) = interactive(&server.client, &session, false).await;
+        let host = registry.permissions().host(Arc::new(LocalHost::default()));
+        let answer = tokio::spawn(async move { host.request_permission(super::permissions::approval_request(id)).await });
+        let second_reply = callback(&mut second_events).await;
+        let third_reply = callback(&mut third_events).await;
+        second_reply.respond_with_result(Ok(serde_json::json!({"outcome":{"outcome":"selected","optionId":"allow"}}))).expect("first answer");
+        assert_eq!(answer.await.expect("task").expect("answer"), acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new("allow")));
+        let _ = third_reply.respond_with_result(Ok(serde_json::json!({"outcome":{"outcome":"cancelled"}})));
+
+        let interactions = registry.elicitations().clone();
+        let connection = uuid::Uuid::new_v4();
+        interactions.open_connection(id, connection);
+        let answer = tokio::spawn(async move { interactions.request(id, connection, serde_json::json!({"sessionId":id.to_string(),"mode":"form","message":"Name?","requestedSchema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}})).await });
+        callback(&mut second_events).await.respond_with_result(Ok(serde_json::json!({"action":"accept","content":{"name":"BAS"}}))).expect("supported frontend answers");
+        assert_eq!(answer.await.expect("task").expect("answer")["action"], "accept");
+        registry.shutdown().await;
+    }).await.expect("multiplexing deadline");
 }

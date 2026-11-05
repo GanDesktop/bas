@@ -71,7 +71,7 @@ impl SessionPermissions {
     }
 }
 
-/// Keeps interactive approval active only while its subscription is alive.
+/// Observes pending approvals; the Agent request owns their lifetime.
 pub struct PermissionSubscription {
     permissions: Arc<Permissions>,
     session: SessionId,
@@ -85,9 +85,6 @@ impl Drop for PermissionSubscription {
             && self.snapshots.same_channel(&session.snapshots.subscribe())
         {
             session.viewers -= 1;
-            if session.viewers == 0 {
-                session.cancel();
-            }
         }
     }
 }
@@ -106,7 +103,6 @@ struct PendingResponse {
 
 enum PermissionRoute {
     Headless,
-    Detached,
     Pending(PendingResponse),
 }
 
@@ -213,9 +209,6 @@ impl Permissions {
         let Some(entry) = state.get_mut(&session) else {
             return PermissionRoute::Headless;
         };
-        if entry.viewers == 0 {
-            return PermissionRoute::Detached;
-        }
         let request_id = uuid::Uuid::new_v4().to_string();
         let (respond, response) = oneshot::channel();
         let permission = PendingPermission {
@@ -262,7 +255,6 @@ impl Host for InteractiveHost {
                 .response
                 .await
                 .unwrap_or(acp::RequestPermissionOutcome::Cancelled)),
-            PermissionRoute::Detached => Ok(acp::RequestPermissionOutcome::Cancelled),
             PermissionRoute::Headless => self.fallback.request_permission(request).await,
         }
     }
