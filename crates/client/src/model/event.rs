@@ -132,16 +132,20 @@ pub struct ProtocolRecord {
 impl Event {
     /// Conversation events do not belong to the BAS management subscription.
     pub fn management(&self) -> Option<Self> {
-        let mut event = self.clone();
-        event.protocol = None;
-        event.historical_only = false;
-        event.kind = match &self.kind {
+        let kind = match &self.kind {
             EventKind::Acp(_) | EventKind::Subagent(_) => return None,
             EventKind::TurnStarted { turn, .. } => EventKind::ActivityChanged { turn: Some(*turn) },
             EventKind::TurnFinished { .. } => EventKind::ActivityChanged { turn: None },
             kind => kind.clone(),
         };
-        Some(event)
+        Some(Self {
+            session: self.session,
+            cursor: self.cursor,
+            at: self.at,
+            protocol: None,
+            historical_only: false,
+            kind,
+        })
     }
 }
 
