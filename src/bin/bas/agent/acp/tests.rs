@@ -37,6 +37,24 @@ struct RejectPromptStore {
 
 #[cfg(unix)]
 impl crate::storage::Storage for RejectPromptStore {
+    fn workspaces(
+        &self,
+    ) -> BoxFuture<'_, Result<Vec<bas::model::Workspace>, crate::storage::Error>> {
+        self.inner.workspaces()
+    }
+    fn save_workspace(
+        &self,
+        workspace: bas::model::Workspace,
+    ) -> BoxFuture<'_, Result<(), crate::storage::Error>> {
+        self.inner.save_workspace(workspace)
+    }
+    fn delete_workspace(
+        &self,
+        id: bas::model::WorkspaceId,
+    ) -> BoxFuture<'_, Result<(), crate::storage::Error>> {
+        self.inner.delete_workspace(id)
+    }
+
     fn create(
         &self,
         meta: bas::model::SessionMeta,
@@ -441,6 +459,7 @@ async fn auth_required_startup_preserves_acp_details_without_creating_session() 
         let service = crate::service::Service::new(registry.clone());
         let error = service
             .create_session(tonic::Request::new(pb::CreateSessionRequest {
+                workspace_id: None,
                 agent: "fixture".into(),
                 ..Default::default()
             }))
@@ -530,6 +549,7 @@ fn fixture_spec(mode: &str, directory: &tempfile::TempDir) -> AgentSpec {
 #[cfg(unix)]
 fn request() -> CreateRequest {
     CreateRequest {
+        workspace: None,
         agent: "fixture".into(),
         owner: Owner::current(),
         cwd: None,

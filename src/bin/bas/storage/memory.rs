@@ -5,7 +5,9 @@ use std::{
 };
 
 use bas::model::history::{Dependency, DependencyIndex, append_prompt_preview};
-use bas::model::{AgentId, Cursor, Event, EventKind, SessionId, SessionMeta, TurnId};
+use bas::model::{
+    AgentId, Cursor, Event, EventKind, SessionId, SessionMeta, TurnId, Workspace, WorkspaceId,
+};
 use bas::service::{HistoryOverview, HistoryOverviewEntry};
 use futures::future::BoxFuture;
 
@@ -41,6 +43,7 @@ struct Context {
 /// Acceptance receipts survive event eviction until session deletion: memory grows
 /// by one hash/receipt and map entry per accepted prompt, never by its payload.
 pub struct Memory {
+    workspaces: Mutex<BTreeMap<WorkspaceId, Workspace>>,
     capacity: NonZeroUsize,
     sessions: Mutex<HashMap<SessionId, Entry>>,
     last_used_agent: Mutex<Option<AgentId>>,
@@ -50,6 +53,7 @@ impl Memory {
     #[must_use]
     pub fn new(capacity: NonZeroUsize) -> Self {
         Self {
+            workspaces: Mutex::new(BTreeMap::new()),
             capacity,
             sessions: Mutex::new(HashMap::new()),
             last_used_agent: Mutex::new(None),
@@ -58,6 +62,36 @@ impl Memory {
 }
 
 impl Storage for Memory {
+    fn workspaces(&self) -> BoxFuture<'_, Result<Vec<Workspace>, Error>> {
+        Box::pin(async {
+            Ok(self
+                .workspaces
+                .lock()
+                .expect("workspace storage lock")
+                .values()
+                .cloned()
+                .collect())
+        })
+    }
+    fn save_workspace(&self, workspace: Workspace) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            self.workspaces
+                .lock()
+                .expect("workspace storage lock")
+                .insert(workspace.id, workspace);
+            Ok(())
+        })
+    }
+    fn delete_workspace(&self, id: WorkspaceId) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            self.workspaces
+                .lock()
+                .expect("workspace storage lock")
+                .remove(&id);
+            Ok(())
+        })
+    }
+
     fn record_created_session(&self, id: SessionId) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(async move {
             let sessions = self.sessions.lock().expect("storage lock is not poisoned");

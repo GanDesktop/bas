@@ -9,6 +9,16 @@ package bas.v1;
 
 // Daemon administration and session I/O.
 service Bas {
+  rpc CreateWorkspace(CreateWorkspaceRequest) returns (Workspace);
+  rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  rpc GetWorkspace(GetWorkspaceRequest) returns (Workspace);
+  // Archiving also stops and archives every associated session.
+  // Restoring a workspace does not restore its archived sessions.
+  rpc SetWorkspaceArchived(SetWorkspaceArchivedRequest) returns (Workspace);
+  // Without force, rejects a workspace containing any sessions, including archived ones.
+  // With force, removes its sessions and Bas history. Never removes project files.
+  rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse);
+
   // Edits only this daemon's agent section, never arbitrary files or frontend settings.
   rpc GetAgentConfiguration(GetAgentConfigurationRequest) returns (AgentConfiguration);
   rpc SaveAgentConfiguration(SaveAgentConfigurationRequest) returns (AgentConfiguration);
@@ -89,6 +99,32 @@ service Bas {
   // One containing logical page, expanded backwards for replay dependencies.
   rpc LoadHistoryWindowAt(LoadHistoryWindowAtRequest) returns (LoadHistoryWindowAtResponse);
 }
+
+message Workspace {
+  uint64 revision = 7;
+  string id = 1;
+  string name = 2;
+  string cwd = 3;
+  bool archived = 4;
+  uint64 created_at = 5;
+  uint64 updated_at = 6;
+}
+message CreateWorkspaceRequest {
+  string cwd = 1;
+  optional string name = 2;
+}
+message ListWorkspacesRequest { bool include_archived = 1; }
+message ListWorkspacesResponse { repeated Workspace workspaces = 1; }
+message GetWorkspaceRequest { string workspace_id = 1; }
+message SetWorkspaceArchivedRequest {
+  string workspace_id = 1;
+  bool archived = 2;
+}
+message DeleteWorkspaceRequest {
+  string workspace_id = 1;
+  bool force = 2;
+}
+message DeleteWorkspaceResponse {}
 
 // One configured agent backend.
 message Agent {
@@ -289,6 +325,7 @@ message SessionRuntime {
 
 // Committed metadata plus independent runtime health, without history events.
 message Session {
+  string workspace_id = 20;
   string id = 1;
   string agent = 2;
   optional string title = 3;
@@ -333,6 +370,8 @@ message WorkspaceChanged {
 }
 
 message CreateSessionRequest {
+  // Select an existing workspace. When omitted, cwd resolves/creates a workspace.
+  optional string workspace_id = 6;
   // Backend id, from ListAgents. Defaults to "embedded" when empty.
   string agent = 1;
   optional string title = 2;

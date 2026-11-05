@@ -13,6 +13,7 @@ mod session;
 mod subagent;
 mod submission;
 mod time;
+mod workspace;
 
 pub use approval::*;
 pub use content::*;
@@ -23,6 +24,7 @@ pub use session::*;
 pub use subagent::*;
 pub use submission::*;
 pub use time::*;
+pub use workspace::*;
 
 #[cfg(test)]
 mod tests;

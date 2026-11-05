@@ -56,6 +56,9 @@ TCP、mTLS 和本地 IPC 不改变这两条路径的含义。
 
 | gRPC 接口或字段 | ACP 类型 / Bas 职责 |
 | --- | --- |
+| CreateWorkspace、ListWorkspaces、GetWorkspace | 独立于 Agent 和会话的持久工作区，包含 ID、名称、主目录、归档状态和修订号；同一规范化目录复用已有工作区 |
+| SetWorkspaceArchived | 归档时停止并归档全部关联会话；恢复工作区只恢复工作区本身，不启动已归档会话 |
+| DeleteWorkspace | 默认拒绝包含任何会话（含已归档会话）的工作区；`force=true` 级联删除会话及 Bas 历史，不删除项目文件 |
 | ListAgents、CreateSession、ListSessions、GetSession、DeleteSession | 后端选择、进程与会话生命周期 |
 | ListAgentSessions | 在单条 ACP 连接上调用 `session/list` 并读完分页；返回原生 `ListSessionsResponse`、初始化能力和已导入 ID 映射，不创建会话 |
 | ImportAgentSession | 接收 Agent 原生 `SessionInfo`，加载／恢复指定会话，保存 Bas UUID 与 Agent ID 映射；不调用 `session/new` |
@@ -440,3 +443,13 @@ CLI 的人类可读输出会转义终端控制字符；JSON 输出保留 JSON �
 
 ACP 原始定义参见 [内容类型](https://agentclientprotocol.com/protocol/v1/content) 与
 [会话配置选项](https://agentclientprotocol.com/protocol/v1/session-config-options)。
+
+### 工作区生命周期
+
+`Session.workspace_id` 是持久的工作区引用；会话中的 `cwd` 和附加目录描述该 Agent 会话实际装载的目录上下文。`CreateSession.workspace_id` 可选择已有工作区；终端客户端也可通过 `cwd` 简写解析或创建工作区。Agent 历史导入保留原始 ACP 路径拼写，关联的工作区使用服务端规范化目录。空工作区无需启动 Agent 即可保存和恢复。
+
+归档工作区禁止继续新建、启动或恢复其会话。工作区归档和删除排斥并发会话生命周期变更；单独会话之间仍可并发操作。调用方断开后，已开始的工作区创建、归档、删除继续完成。级联发生错误时保留工作区并返回错误，已完成的子操作保留，调用方可刷新并重试。
+
+`force` 只跳过非空检查：格式错误、工作区不存在和持久化失败仍返回错误。确认由交互客户端负责，RPC 不弹出确认或模拟用户批准。
+
+工作区存储于 SQLite `workspaces` 表，内存存储提供相同生命周期语义。会话记录必须包含有效的工作区引用；开发阶段不为旧会话记录推导工作区或填充缺失 ID。

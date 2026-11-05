@@ -84,7 +84,12 @@ async fn schema_eight_rebuilds_prompt_metadata_without_rewriting_packed_chunks()
         .expect("database");
     SCHEMA_SEVEN.apply(&db).await.expect("schema seven");
     let store = SqliteStore { db };
-    let mut meta = SessionMeta::new(SessionId::new(), "legacy".into(), Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "legacy".into(),
+        Owner::current(),
+    );
     store.create(meta.clone(), None).await.expect("session");
     let turn = TurnId::new();
     let mut events = Vec::new();
@@ -224,7 +229,12 @@ async fn block(store: &SqliteStore, turn: TurnId, events: &[Event], compress: bo
 async fn schema_six_mixed_history_migrates_losslessly_with_lazy_catalog() {
     let store = legacy().await;
     let memory = Memory::new(NonZeroUsize::new(100).expect("capacity"));
-    let mut meta = SessionMeta::new(SessionId::new(), "legacy".into(), Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "legacy".into(),
+        Owner::current(),
+    );
     meta.status = SessionStatus::Idle;
     store
         .create(meta.clone(), Some(ResumeData::acp("native-id")))
@@ -359,7 +369,12 @@ async fn schema_six_mixed_history_migrates_losslessly_with_lazy_catalog() {
 #[tokio::test]
 async fn failed_migration_rolls_back_without_dropping_original_history() {
     let store = legacy().await;
-    let meta = SessionMeta::new(SessionId::new(), "legacy".into(), Owner::current());
+    let meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "legacy".into(),
+        Owner::current(),
+    );
     store.create(meta.clone(), None).await.expect("session");
     let turn = TurnId::new();
     let event = Event::new(

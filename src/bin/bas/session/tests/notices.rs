@@ -20,7 +20,12 @@ async fn live_notices_leave_memory_and_durable_history_and_cursors_unchanged() {
         } else {
             None
         };
-        let meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
+        let meta = SessionMeta::new(
+            Default::default(),
+            SessionId::new(),
+            "embedded".into(),
+            Owner::current(),
+        );
         if let Some(storage) = &storage {
             storage
                 .create(meta.clone(), None)

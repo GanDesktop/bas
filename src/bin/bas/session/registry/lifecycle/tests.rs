@@ -38,6 +38,7 @@ async fn idle_runtime_reloads_original_session_without_breaking_attach() {
     registry.set_acp_policy(policy.clone()).expect("policy");
     let session = registry
         .create(CreateRequest {
+            workspace: None,
             agent: "fixture".into(),
             owner: Owner::current(),
             cwd: None,

@@ -127,6 +127,7 @@ impl TryFrom<&model::SessionSnapshot> for pb::Session {
         let meta = &snapshot.meta;
         Ok(Self {
             id: meta.id.to_string(),
+            workspace_id: meta.workspace.to_string(),
             agent: meta.agent.to_string(),
             title: meta.title.clone(),
             owner: Some((&meta.owner).into()),
@@ -220,6 +221,7 @@ impl TryFrom<pb::Session> for model::SessionSnapshot {
     fn try_from(session: pb::Session) -> Result<Self, Self::Error> {
         let meta = model::SessionMeta {
             id: model::SessionId::from_str(&session.id)?,
+            workspace: model::WorkspaceId::from_str(&session.workspace_id)?,
             agent: session.agent.into(),
             title: session.title,
             owner: session.owner.ok_or(Error::MissingOwner)?.into(),
@@ -576,5 +578,34 @@ impl pb::SubagentSnapshot {
     /// Rejects an invalid Bas subagent snapshot.
     pub fn decode(&self) -> Result<model::Subagents, Error> {
         Ok(serde_json::from_slice(&self.json)?)
+    }
+}
+
+impl TryFrom<&model::Workspace> for pb::Workspace {
+    type Error = Error;
+    fn try_from(workspace: &model::Workspace) -> Result<Self, Error> {
+        Ok(Self {
+            id: workspace.id.to_string(),
+            name: workspace.name.clone(),
+            cwd: utf8_cwd(&workspace.cwd)?.to_owned(),
+            archived: workspace.archived,
+            revision: workspace.revision,
+            created_at: workspace.created_at.millis(),
+            updated_at: workspace.updated_at.millis(),
+        })
+    }
+}
+impl TryFrom<pb::Workspace> for model::Workspace {
+    type Error = Error;
+    fn try_from(workspace: pb::Workspace) -> Result<Self, Error> {
+        Ok(Self {
+            id: workspace.id.parse()?,
+            name: workspace.name,
+            cwd: workspace.cwd.into(),
+            archived: workspace.archived,
+            revision: workspace.revision,
+            created_at: model::Timestamp::from_millis(workspace.created_at),
+            updated_at: model::Timestamp::from_millis(workspace.updated_at),
+        })
     }
 }

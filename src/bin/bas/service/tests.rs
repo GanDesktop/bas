@@ -14,6 +14,7 @@ mod permissions;
 #[cfg(unix)]
 mod subagents;
 mod submission;
+mod workspaces;
 
 use bas::{
     model::{ContentBlock, Cursor, Owner},
@@ -42,6 +43,7 @@ fn registry(history: usize) -> Arc<Registry> {
 async fn create(registry: &Registry) -> Arc<crate::session::Session> {
     registry
         .create(CreateRequest {
+            workspace: None,
             agent: "embedded".into(),
             owner: Owner::current(),
             cwd: None,

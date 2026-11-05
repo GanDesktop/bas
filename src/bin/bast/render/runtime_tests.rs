@@ -3,6 +3,7 @@ use super::*;
 #[test]
 fn runtime_failure_overrides_committed_status_and_escapes_error() {
     let mut meta = model::SessionMeta::new(
+        Default::default(),
         model::SessionId::new(),
         "test".into(),
         model::Owner::current(),

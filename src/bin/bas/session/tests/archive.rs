@@ -76,7 +76,12 @@ async fn archival_is_metadata_for_starting_stopped_and_failed_sessions() {
         SessionStatus::Failed,
     ] {
         let session = Session::new(
-            SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current()),
+            SessionMeta::new(
+                Default::default(),
+                SessionId::new(),
+                "embedded".into(),
+                Owner::current(),
+            ),
             Limits::default(),
         );
         match status {

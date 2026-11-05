@@ -41,7 +41,12 @@ async fn schema_five_upgrade_moves_history_without_packing_and_preserves_receipt
     ]);
     SCHEMA_FIVE.apply(&db).await.expect("schema five");
     let store = SqliteStore { db };
-    let mut meta = SessionMeta::new(SessionId::new(), "legacy".into(), Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "legacy".into(),
+        Owner::current(),
+    );
     store
         .create(meta.clone(), Some(ResumeData::acp("original")))
         .await
@@ -165,7 +170,12 @@ async fn schema_four_upgrade_starts_without_selection_and_checks_version() {
     ]);
     SCHEMA_FOUR.apply(&db).await.expect("schema four");
     let store = SqliteStore { db: db.clone() };
-    let mut legacy = SessionMeta::new(SessionId::new(), "legacy".into(), Owner::current());
+    let mut legacy = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "legacy".into(),
+        Owner::current(),
+    );
     legacy.status = bas::model::SessionStatus::Idle;
     store
         .create(legacy.clone(), Some(ResumeData::acp("legacy")))
@@ -189,8 +199,8 @@ async fn schema_four_upgrade_starts_without_selection_and_checks_version() {
             .expect("no inferred selection"),
         None
     );
-    verify_existing_schema(&db).await.expect("valid eight");
-    sql::statement("PRAGMA user_version = 9")
+    verify_existing_schema(&db).await.expect("valid nine");
+    sql::statement("PRAGMA user_version = 10")
         .exec(&mut db)
         .await
         .expect("future");
@@ -239,7 +249,12 @@ async fn schema_three_upgrade_preserves_authoritative_records_and_rebuilds_turns
     ]);
     SCHEMA_THREE.apply(&db).await.expect("schema three");
     let store = SqliteStore { db };
-    let mut meta = SessionMeta::new(SessionId::new(), "test".into(), Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "test".into(),
+        Owner::current(),
+    );
     let resume = ResumeData::acp("original-resume");
     store
         .create(meta.clone(), Some(resume.clone()))

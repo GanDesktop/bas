@@ -76,6 +76,81 @@ impl Service {
 
 #[tonic::async_trait]
 impl Bas for Service {
+    async fn create_workspace(
+        &self,
+        request: Request<pb::CreateWorkspaceRequest>,
+    ) -> Result<Response<pb::Workspace>, Status> {
+        let request = request.into_inner();
+        let workspace = self
+            .registry
+            .create_workspace(request.cwd.into(), request.name)
+            .await?;
+        Ok(Response::new(
+            pb::Workspace::try_from(&workspace).map_err(metadata_error)?,
+        ))
+    }
+    async fn list_workspaces(
+        &self,
+        request: Request<pb::ListWorkspacesRequest>,
+    ) -> Result<Response<pb::ListWorkspacesResponse>, Status> {
+        let include_archived = request.into_inner().include_archived;
+        let workspaces = self
+            .registry
+            .workspaces()
+            .await
+            .into_iter()
+            .filter(|workspace| include_archived || !workspace.archived)
+            .map(|workspace| pb::Workspace::try_from(&workspace))
+            .collect::<Result<_, _>>()
+            .map_err(metadata_error)?;
+        Ok(Response::new(pb::ListWorkspacesResponse { workspaces }))
+    }
+    async fn get_workspace(
+        &self,
+        request: Request<pb::GetWorkspaceRequest>,
+    ) -> Result<Response<pb::Workspace>, Status> {
+        let id = request.into_inner().workspace_id.parse().map_err(
+            |error: bas::model::ParseIdError| Status::invalid_argument(error.to_string()),
+        )?;
+        let workspace = self.registry.workspace(id).await?;
+        Ok(Response::new(
+            pb::Workspace::try_from(&workspace).map_err(metadata_error)?,
+        ))
+    }
+    async fn set_workspace_archived(
+        &self,
+        request: Request<pb::SetWorkspaceArchivedRequest>,
+    ) -> Result<Response<pb::Workspace>, Status> {
+        let request = request.into_inner();
+        let id = request
+            .workspace_id
+            .parse()
+            .map_err(|error: bas::model::ParseIdError| {
+                Status::invalid_argument(error.to_string())
+            })?;
+        let workspace = self
+            .registry
+            .set_workspace_archived(id, request.archived)
+            .await?;
+        Ok(Response::new(
+            pb::Workspace::try_from(&workspace).map_err(metadata_error)?,
+        ))
+    }
+    async fn delete_workspace(
+        &self,
+        request: Request<pb::DeleteWorkspaceRequest>,
+    ) -> Result<Response<pb::DeleteWorkspaceResponse>, Status> {
+        let request = request.into_inner();
+        let id = request
+            .workspace_id
+            .parse()
+            .map_err(|error: bas::model::ParseIdError| {
+                Status::invalid_argument(error.to_string())
+            })?;
+        self.registry.delete_workspace(id, request.force).await?;
+        Ok(Response::new(pb::DeleteWorkspaceResponse {}))
+    }
+
     async fn get_acp_configuration(
         &self,
         _: Request<pb::GetAcpConfigurationRequest>,
@@ -403,6 +478,13 @@ impl Bas for Service {
         let session = self
             .registry
             .create(CreateRequest {
+                workspace: request
+                    .workspace_id
+                    .map(|id| id.parse())
+                    .transpose()
+                    .map_err(|error: bas::model::ParseIdError| {
+                        Status::invalid_argument(error.to_string())
+                    })?,
                 agent,
                 owner: Owner {
                     user: request.owner_user.unwrap_or(current.user),
@@ -463,6 +545,7 @@ impl Bas for Service {
             .registry
             .import_agent_session(
                 CreateRequest {
+                    workspace: None,
                     agent: request.agent.into(),
                     owner: Owner::current(),
                     cwd: Some(info.cwd),

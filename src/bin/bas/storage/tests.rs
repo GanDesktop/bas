@@ -5,7 +5,12 @@ use super::{Error, LocalDb, Memory, PromptAcceptance, ResumeData, Storage};
 use bas::model::{Cursor, Event, EventKind, Owner, SessionId, SessionMeta, TurnId, TurnReceipt};
 
 fn meta() -> SessionMeta {
-    SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current())
+    SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "embedded".into(),
+        Owner::current(),
+    )
 }
 
 async fn last_used_contract(storage: &dyn Storage) {

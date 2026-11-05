@@ -28,7 +28,7 @@ fn events(id: SessionId, cursors: impl IntoIterator<Item = u64>) -> Vec<pb::Even
 }
 
 fn window(id: SessionId) -> pb::LoadHistoryWindowResponse {
-    let mut meta = SessionMeta::new(id, "test".into(), Owner::current());
+    let mut meta = SessionMeta::new(Default::default(), id, "test".into(), Owner::current());
     meta.revision = Cursor::from_raw(10);
     pb::LoadHistoryWindowResponse {
         session: Some((&SessionSnapshot::from(meta)).try_into().expect("metadata")),

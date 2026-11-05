@@ -8,6 +8,9 @@ impl Registry {
     /// Restarts a stopped backend, or reconciles a persistence-blocked runtime with storage.
     /// Persistence recovery is lazy: it never sends a prompt or creates a replacement session.
     pub async fn restart_session(&self, session: &Arc<Session>) -> Result<(), CreateError> {
+        let _workspace_gate = self.workspace_gate.read().await;
+        self.require_active_workspace(session.meta().workspace)
+            .await?;
         tokio::select! {
             biased;
             () = self.stopping.cancelled() => Err(CreateError::Stopping),
@@ -38,6 +41,19 @@ impl Registry {
         session: &Arc<Session>,
         archived: bool,
     ) -> Result<bas::model::SessionSnapshot, CreateError> {
+        let _workspace_gate = self.workspace_gate.read().await;
+        self.set_archived_locked(session, archived).await
+    }
+
+    pub(super) async fn set_archived_locked(
+        &self,
+        session: &Arc<Session>,
+        archived: bool,
+    ) -> Result<bas::model::SessionSnapshot, CreateError> {
+        if !archived {
+            self.require_active_workspace(session.meta().workspace)
+                .await?;
+        }
         if archived {
             let snapshot = session.archive().await?;
             self.permissions.close(session.id());

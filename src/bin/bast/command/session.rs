@@ -37,6 +37,7 @@ async fn create(
     let owner = bas::model::Owner::current();
     let response = client
         .create_session(pb::CreateSessionRequest {
+            workspace_id: None,
             agent,
             title,
             cwd: Some(cwd),

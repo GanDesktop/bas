@@ -4,7 +4,12 @@ use serde_json::json;
 use std::num::NonZeroUsize;
 
 fn state() -> SessionMeta {
-    SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current())
+    SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "embedded".into(),
+        Owner::current(),
+    )
 }
 
 fn update(value: serde_json::Value) -> EventKind {

@@ -21,7 +21,12 @@ impl agent::Agent for CountingAgent {
 
 async fn session() -> (Arc<Session>, Arc<AtomicUsize>) {
     let session = Session::new(
-        SessionMeta::new(SessionId::new(), "counting".into(), Owner::current()),
+        SessionMeta::new(
+            Default::default(),
+            SessionId::new(),
+            "counting".into(),
+            Owner::current(),
+        ),
         Limits {
             history_capacity: std::num::NonZeroUsize::new(4).expect("capacity"),
             ..Limits::default()

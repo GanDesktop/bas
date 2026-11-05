@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use bas::model::{AgentId, Cursor, Event, SessionId, SessionMeta, TurnId};
+use bas::model::{AgentId, Cursor, Event, SessionId, SessionMeta, TurnId, Workspace, WorkspaceId};
 use futures::future::BoxFuture;
 use tokio::sync::{mpsc, oneshot};
 
@@ -18,6 +18,9 @@ use bas::service::HistoryOverview;
 type Reply<T> = oneshot::Sender<Result<T, Error>>;
 
 enum Command {
+    Workspaces(Reply<Vec<Workspace>>),
+    SaveWorkspace(Workspace, Reply<()>),
+    DeleteWorkspace(WorkspaceId, Reply<()>),
     LastUsedAgent(Reply<Option<AgentId>>),
     RecordCreatedSession(SessionId, Reply<()>),
     Create(SessionMeta, Option<ResumeData>, Reply<()>),
@@ -39,6 +42,15 @@ enum Command {
 impl Command {
     async fn run(self, store: &SqliteStore) {
         match self {
+            Self::Workspaces(reply) => {
+                let _ = reply.send(store.workspaces().await);
+            }
+            Self::SaveWorkspace(workspace, reply) => {
+                let _ = reply.send(store.save_workspace(workspace).await);
+            }
+            Self::DeleteWorkspace(id, reply) => {
+                let _ = reply.send(store.delete_workspace(id).await);
+            }
             Self::RecordCreatedSession(id, reply) => {
                 let _ = reply.send(store.record_created_session(id).await);
             }
@@ -166,6 +178,16 @@ impl LocalDb {
 }
 
 impl Storage for LocalDb {
+    fn workspaces(&self) -> BoxFuture<'_, Result<Vec<Workspace>, Error>> {
+        Box::pin(self.request(Command::Workspaces))
+    }
+    fn save_workspace(&self, workspace: Workspace) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(self.request(move |reply| Command::SaveWorkspace(workspace, reply)))
+    }
+    fn delete_workspace(&self, id: WorkspaceId) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(self.request(move |reply| Command::DeleteWorkspace(id, reply)))
+    }
+
     fn record_created_session(&self, id: SessionId) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(self.request(move |reply| Command::RecordCreatedSession(id, reply)))
     }

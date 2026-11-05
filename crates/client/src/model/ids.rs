@@ -68,6 +68,7 @@ macro_rules! define_uuid_id {
     };
 }
 
+define_uuid_id!(WorkspaceId, "workspace id", new_v4);
 define_uuid_id!(SessionId, "session id", new_v4);
 define_uuid_id!(TurnId, "turn id", now_v7);
 

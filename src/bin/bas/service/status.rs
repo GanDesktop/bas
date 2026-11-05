@@ -78,6 +78,11 @@ impl From<HistoryError> for Status {
 impl From<CreateError> for Status {
     fn from(error: CreateError) -> Self {
         match error {
+            CreateError::WorkspaceNotFound(_) => Status::not_found(error.to_string()),
+            CreateError::WorkspaceArchived(_) | CreateError::WorkspaceNotEmpty(_) => {
+                Status::failed_precondition(error.to_string())
+            }
+            CreateError::InvalidWorkspace(_) => Status::invalid_argument(error.to_string()),
             CreateError::UnknownAgent(_) => Status::not_found(error.to_string()),
             CreateError::NotResumable(_) => Status::failed_precondition(error.to_string()),
             CreateError::Cwd(_) => Status::invalid_argument(error.to_string()),

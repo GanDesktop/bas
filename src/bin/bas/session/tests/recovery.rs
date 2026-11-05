@@ -42,6 +42,22 @@ struct CreateGate {
 }
 
 impl Storage for PausedCommit {
+    fn workspaces(&self) -> BoxFuture<'_, Result<Vec<bas::model::Workspace>, storage::Error>> {
+        self.inner.workspaces()
+    }
+    fn save_workspace(
+        &self,
+        workspace: bas::model::Workspace,
+    ) -> BoxFuture<'_, Result<(), storage::Error>> {
+        self.inner.save_workspace(workspace)
+    }
+    fn delete_workspace(
+        &self,
+        id: bas::model::WorkspaceId,
+    ) -> BoxFuture<'_, Result<(), storage::Error>> {
+        self.inner.delete_workspace(id)
+    }
+
     fn create(
         &self,
         meta: SessionMeta,
@@ -141,8 +157,25 @@ async fn terminal_interruption_and_status_commit_together_before_publication() {
             pause_on: |event| matches!(event.kind, EventKind::TurnInterrupted { .. }),
             create_gate: None,
         });
-        let meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
+        let meta = SessionMeta::new(
+            Default::default(),
+            SessionId::new(),
+            "embedded".into(),
+            Owner::current(),
+        );
         let id = meta.id;
+        storage
+            .save_workspace(bas::model::Workspace {
+                id: meta.workspace,
+                name: "test".into(),
+                cwd: std::env::current_dir().expect("cwd"),
+                archived: false,
+                revision: 1,
+                created_at: meta.created_at,
+                updated_at: meta.updated_at,
+            })
+            .await
+            .expect("workspace");
         storage.create(meta.clone(), None).await.expect("create");
         let session = Session::with_storage(meta, Limits::default(), Some(storage.clone()), true);
         let (updates, inbox) = mpsc::channel(16);
@@ -232,8 +265,25 @@ async fn recovered_terminal_history_replays_in_order_then_closes() {
         SessionStatus::Working,
     ] {
         let storage = Arc::new(LocalDb::open(":memory:").await.expect("database"));
-        let mut meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
+        let mut meta = SessionMeta::new(
+            Default::default(),
+            SessionId::new(),
+            "embedded".into(),
+            Owner::current(),
+        );
         let id = meta.id;
+        storage
+            .save_workspace(bas::model::Workspace {
+                id: meta.workspace,
+                name: "test".into(),
+                cwd: std::env::current_dir().expect("cwd"),
+                archived: false,
+                revision: 1,
+                created_at: meta.created_at,
+                updated_at: meta.updated_at,
+            })
+            .await
+            .expect("workspace");
         storage.create(meta.clone(), None).await.expect("create");
         for title in ["first", "second"] {
             let event = Event::new(
@@ -366,13 +416,30 @@ impl Agent for RestoredSnapshot {
 
 #[tokio::test]
 async fn restore_barrier_retains_updates_after_the_load_response() {
-    let mut meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "embedded".into(),
+        Owner::current(),
+    );
     meta.set_status(SessionStatus::Idle);
     meta.acp = Some(mode_snapshot("workspace-write"));
     let storage = Arc::new(Memory::new(
         NonZeroUsize::new(100).expect("history capacity"),
     ));
     let id = meta.id;
+    storage
+        .save_workspace(bas::model::Workspace {
+            id: meta.workspace,
+            name: "test".into(),
+            cwd: std::env::current_dir().expect("cwd"),
+            archived: false,
+            revision: 1,
+            created_at: meta.created_at,
+            updated_at: meta.updated_at,
+        })
+        .await
+        .expect("workspace");
     storage
         .create(meta.clone(), None)
         .await
@@ -529,8 +596,25 @@ async fn durable_attach_backfills_a_lagged_live_receiver_from_sqlite() {
 async fn recovery_records_an_interrupted_turn_instead_of_silently_clearing_it() {
     let storage: Arc<dyn Storage> = Arc::new(LocalDb::open(":memory:").await.expect("database"));
     let limits = Limits::default();
-    let meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
+    let meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "embedded".into(),
+        Owner::current(),
+    );
     let id = meta.id;
+    storage
+        .save_workspace(bas::model::Workspace {
+            id: meta.workspace,
+            name: "test".into(),
+            cwd: std::env::current_dir().expect("cwd"),
+            archived: false,
+            revision: 1,
+            created_at: meta.created_at,
+            updated_at: meta.updated_at,
+        })
+        .await
+        .expect("workspace");
     storage
         .create(meta.clone(), None)
         .await

@@ -96,6 +96,7 @@ fn catalog(ids: &[&str], observed: &Arc<Observed>) -> Arc<Catalog> {
 async fn create(registry: &Registry, agent: &str) -> Arc<Session> {
     registry
         .create(CreateRequest {
+            workspace: None,
             agent: agent.into(),
             owner: Owner::current(),
             cwd: None,

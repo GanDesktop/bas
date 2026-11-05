@@ -66,6 +66,7 @@ pub struct TurnReceipt {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SessionMeta {
     pub id: SessionId,
+    pub workspace: super::WorkspaceId,
     /// Backend that owns the conversation.
     pub agent: AgentId,
     /// Weakly-typed label shown by frontends.
@@ -114,10 +115,11 @@ pub struct SessionMeta {
 impl SessionMeta {
     /// Creates metadata for a session that is about to be launched.
     #[must_use]
-    pub fn new(id: SessionId, agent: AgentId, owner: Owner) -> Self {
+    pub fn new(workspace: super::WorkspaceId, id: SessionId, agent: AgentId, owner: Owner) -> Self {
         let now = Timestamp::now();
         Self {
             id,
+            workspace,
             agent,
             title: None,
             owner,

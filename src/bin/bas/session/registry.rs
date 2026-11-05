@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, num::NonZeroUsize, path::PathBuf, sync::Arc, ti
 
 use bas::{
     config::{AcpLifecycle, AgentRegistration},
-    model::{AgentId, Owner, SessionId, SessionMeta, SessionStatus},
+    model::{AgentId, Owner, SessionId, SessionMeta, SessionStatus, Workspace, WorkspaceId},
 };
 use tokio::sync::{RwLock, mpsc};
 use tokio_util::sync::CancellationToken;
@@ -14,6 +14,7 @@ use crate::storage::{self, ResumeData, Storage};
 mod history;
 mod lifecycle;
 mod restart;
+mod workspaces;
 
 pub const DEFAULT_HISTORY: usize = 4096;
 pub const DEFAULT_BUFFER: usize = 1024;
@@ -39,6 +40,7 @@ impl Default for Limits {
 }
 
 pub struct CreateRequest {
+    pub workspace: Option<WorkspaceId>,
     pub agent: AgentId,
     pub owner: Owner,
     pub cwd: Option<PathBuf>,
@@ -47,6 +49,14 @@ pub struct CreateRequest {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CreateError {
+    #[error("workspace {0} not found")]
+    WorkspaceNotFound(WorkspaceId),
+    #[error("workspace {0} is archived")]
+    WorkspaceArchived(WorkspaceId),
+    #[error("workspace {0} contains sessions; force is required to delete them")]
+    WorkspaceNotEmpty(WorkspaceId),
+    #[error("invalid workspace: {0}")]
+    InvalidWorkspace(&'static str),
     #[error("agent {0} is not configured")]
     UnknownAgent(AgentId),
     #[error("the daemon is stopping")]
@@ -70,6 +80,9 @@ pub enum CreateError {
 pub struct NotFound(pub SessionId);
 
 pub struct Registry {
+    workspaces: Arc<RwLock<BTreeMap<WorkspaceId, Workspace>>>,
+    workspace_gate: RwLock<()>,
+    workspace_creation: Arc<tokio::sync::Mutex<()>>,
     configuration: std::sync::RwLock<Configuration>,
     last_agent: std::sync::Mutex<Option<AgentId>>,
     maintenance: tokio::sync::Notify,
@@ -140,6 +153,9 @@ impl Registry {
         let elicitations = Arc::new(agent::elicitation::Elicitations::default());
         let host = elicitations.host(permissions.host(host));
         Self {
+            workspaces: Arc::new(RwLock::new(BTreeMap::new())),
+            workspace_gate: RwLock::new(()),
+            workspace_creation: Arc::new(tokio::sync::Mutex::new(())),
             configuration: std::sync::RwLock::new(Configuration {
                 catalog,
                 acp: AcpLifecycle::default(),
@@ -174,10 +190,21 @@ impl Registry {
         let Some(storage) = &self.storage else {
             return Ok(());
         };
+        let workspaces = Arc::get_mut(&mut self.workspaces)
+            .expect("registry is uniquely owned during recovery")
+            .get_mut();
+        for workspace in storage.workspaces().await? {
+            workspaces.insert(workspace.id, workspace);
+        }
         let sessions = Arc::get_mut(&mut self.sessions)
             .expect("registry is uniquely owned during recovery")
             .get_mut();
         for meta in storage.list().await? {
+            if !workspaces.contains_key(&meta.workspace) {
+                return Err(storage::Error::Corrupt(
+                    "session references a missing workspace",
+                ));
+            }
             let running = matches!(meta.status, SessionStatus::Idle | SessionStatus::Working);
             let session =
                 Session::with_storage(meta, self.limits, Some(Arc::clone(storage)), !running);
@@ -289,37 +316,39 @@ impl Registry {
             .spec(&request.agent)
             .cloned()
             .ok_or_else(|| CreateError::UnknownAgent(request.agent.clone()))?;
-        let cwd = match request.cwd {
-            Some(cwd) => cwd,
-            None => std::env::current_dir().map_err(CreateError::Cwd)?,
-        };
-        let cwd = if backend_session_id.is_some() {
-            if !cwd.is_absolute() {
-                return Err(CreateError::NotResumable(
-                    "import requires an absolute Agent workspace",
-                ));
+        let _workspace_gate = self.workspace_gate.read().await;
+        let workspace = match request.workspace {
+            Some(id) => {
+                let workspace = self.workspace(id).await?;
+                if let Some(cwd) = &request.cwd {
+                    let cwd = tokio::fs::canonicalize(cwd)
+                        .await
+                        .map_err(CreateError::Cwd)?;
+                    if cwd != workspace.cwd {
+                        return Err(CreateError::InvalidWorkspace(
+                            "cwd differs from the selected workspace",
+                        ));
+                    }
+                }
+                workspace
             }
-            cwd
-        } else {
-            tokio::fs::canonicalize(cwd)
-                .await
-                .map_err(CreateError::Cwd)?
+            None => {
+                let cwd = request
+                    .cwd
+                    .clone()
+                    .unwrap_or(std::env::current_dir().map_err(CreateError::Cwd)?);
+                self.workspace_for_directory(cwd, None).await?
+            }
         };
-        bas::service::utf8_cwd(&cwd).map_err(|error| {
-            CreateError::Cwd(std::io::Error::new(std::io::ErrorKind::InvalidInput, error))
-        })?;
-        if !tokio::fs::metadata(&cwd)
-            .await
-            .map_err(CreateError::Cwd)?
-            .is_dir()
-        {
-            return Err(CreateError::Cwd(std::io::Error::new(
-                std::io::ErrorKind::NotADirectory,
-                "workspace must be a directory",
-            )));
-        }
+        self.require_active_workspace(workspace.id).await?;
+        // Imported ACP sessions retain the Agent's original path spelling.
+        let cwd = if backend_session_id.is_some() {
+            request.cwd.unwrap_or(workspace.cwd)
+        } else {
+            workspace.cwd
+        };
         let id = SessionId::new();
-        let mut meta = SessionMeta::new(id, request.agent, request.owner);
+        let mut meta = SessionMeta::new(workspace.id, id, request.agent, request.owner);
         meta.cwd = Some(cwd.clone());
         meta.title = request.title;
         let mut pending = PendingSession::create(meta.clone(), self.storage.clone()).await?;
@@ -503,6 +532,11 @@ impl Registry {
     /// # Errors
     /// Returns NotFound for unknown or already removed sessions.
     pub async fn remove(&self, id: SessionId) -> Result<(), CreateError> {
+        let _gate = self.workspace_gate.read().await;
+        self.remove_locked(id).await
+    }
+
+    async fn remove_locked(&self, id: SessionId) -> Result<(), CreateError> {
         let session = self
             .sessions
             .read()

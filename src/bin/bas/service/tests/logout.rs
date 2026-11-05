@@ -98,6 +98,7 @@ async fn logout_negotiates_capability_once_without_creating_or_deleting_sessions
     fixture
         .registry
         .create(CreateRequest {
+            workspace: None,
             agent: "embedded".into(),
             owner: Owner::current(),
             cwd: None,

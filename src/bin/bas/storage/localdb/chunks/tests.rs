@@ -12,7 +12,12 @@ mod navigation;
 mod segments;
 
 fn meta() -> SessionMeta {
-    SessionMeta::new(SessionId::new(), "fixture".into(), Owner::current())
+    SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "fixture".into(),
+        Owner::current(),
+    )
 }
 
 fn directory() -> tempfile::TempDir {

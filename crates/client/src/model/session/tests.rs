@@ -1,7 +1,12 @@
 use super::*;
 
 fn metadata() -> SessionMeta {
-    SessionMeta::new(SessionId::new(), "test".into(), Owner::current())
+    SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "test".into(),
+        Owner::current(),
+    )
 }
 
 #[test]

@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use bas::model::{AgentId, Cursor, Event, SessionId, SessionMeta, TurnId, TurnReceipt};
+use bas::model::{
+    AgentId, Cursor, Event, SessionId, SessionMeta, TurnId, TurnReceipt, Workspace, WorkspaceId,
+};
 use toasty::{
     migration::{MigrationFile, MigrationSet},
     sql,
@@ -116,6 +118,11 @@ const MIGRATIONS: MigrationSet = MigrationSet::new(&[
         "history_overview",
         include_str!("migrations/0008_history_overview.sql"),
     ),
+    MigrationFile::new(
+        9,
+        "workspaces",
+        include_str!("migrations/0009_workspaces.sql"),
+    ),
 ]);
 
 const LAST_USED_AGENT_KEY: &str = "last_used_agent";
@@ -160,7 +167,7 @@ async fn verify_existing_schema(db: &toasty::Db) -> Result<(), Error> {
         .next()
         .ok_or(Error::Corrupt("missing schema version"))?;
     let version: i64 = field(&mut columns(version)?)?;
-    if !(0..=8).contains(&version) {
+    if !(0..=9).contains(&version) {
         return Err(Error::InvalidCommit("unsupported SQLite schema version"));
     }
     let tables = sql::query(if version < 7 {
@@ -633,5 +640,32 @@ impl SqliteStore {
         }
         tx.commit().await?;
         Ok(deleted)
+    }
+}
+
+impl SqliteStore {
+    async fn workspaces(&self) -> Result<Vec<Workspace>, Error> {
+        let rows = sql::query("SELECT metadata FROM workspaces ORDER BY id")
+            .exec(&mut self.db.clone())
+            .await?;
+        rows.into_iter()
+            .map(|row| {
+                let payload: Vec<u8> = field(&mut columns(row)?)?;
+                Ok(serde_json::from_slice(&payload)?)
+            })
+            .collect()
+    }
+    async fn save_workspace(&self, workspace: Workspace) -> Result<(), Error> {
+        sql::statement("INSERT INTO workspaces(id, metadata) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET metadata = excluded.metadata")
+            .bind(workspace.id.to_string()).bind(serde_json::to_vec(&workspace)?)
+            .exec(&mut self.db.clone()).await?;
+        Ok(())
+    }
+    async fn delete_workspace(&self, id: WorkspaceId) -> Result<(), Error> {
+        sql::statement("DELETE FROM workspaces WHERE id = ?1")
+            .bind(id.to_string())
+            .exec(&mut self.db.clone())
+            .await?;
+        Ok(())
     }
 }

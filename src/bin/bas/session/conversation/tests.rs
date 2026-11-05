@@ -15,7 +15,12 @@ async fn only_sessions_without_storage_retain_a_ring() {
                 storage::LocalDb::open(":memory:").await.expect("database"),
             )),
         };
-        let mut meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
+        let mut meta = SessionMeta::new(
+            Default::default(),
+            SessionId::new(),
+            "embedded".into(),
+            Owner::current(),
+        );
         meta.status = SessionStatus::Idle;
         if let Some(storage) = &storage {
             storage.create(meta.clone(), None).await.expect("create");

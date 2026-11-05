@@ -40,6 +40,7 @@ fn registry(mode: &str, directory: &tempfile::TempDir) -> Arc<Registry> {
 
 fn import_request(directory: &tempfile::TempDir) -> CreateRequest {
     CreateRequest {
+        workspace: None,
         agent: "history".into(),
         owner: Owner::current(),
         cwd: Some(directory.path().to_owned()),

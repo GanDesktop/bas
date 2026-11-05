@@ -60,6 +60,7 @@ impl Fixture {
         ));
         let session = registry
             .create(CreateRequest {
+                workspace: None,
                 agent: "roots".into(),
                 owner: Owner::current(),
                 cwd: Some(directory.path().into()),

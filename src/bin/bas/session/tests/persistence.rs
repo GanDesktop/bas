@@ -65,6 +65,22 @@ impl ControlledStore {
 }
 
 impl Storage for ControlledStore {
+    fn workspaces(&self) -> BoxFuture<'_, Result<Vec<bas::model::Workspace>, storage::Error>> {
+        self.inner.workspaces()
+    }
+    fn save_workspace(
+        &self,
+        workspace: bas::model::Workspace,
+    ) -> BoxFuture<'_, Result<(), storage::Error>> {
+        self.inner.save_workspace(workspace)
+    }
+    fn delete_workspace(
+        &self,
+        id: bas::model::WorkspaceId,
+    ) -> BoxFuture<'_, Result<(), storage::Error>> {
+        self.inner.delete_workspace(id)
+    }
+
     fn create(
         &self,
         meta: SessionMeta,
@@ -159,7 +175,35 @@ fn runtime_error(error: SessionError) {
 async fn storage_retry_recovers_one_runtime_without_resending_accepted_work() {
     for working in [false, true] {
         let storage = ControlledStore::new();
-        let meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
+        let registry = Registry::with_storage(
+            Arc::new(Catalog::with_defaults()),
+            Arc::new(LocalHost::default()),
+            Limits::default(),
+            storage.clone(),
+        );
+        let mut meta = SessionMeta::new(
+            Default::default(),
+            SessionId::new(),
+            "embedded".into(),
+            Owner::current(),
+        );
+        meta.workspace = registry
+            .create_workspace(std::env::current_dir().expect("cwd"), None)
+            .await
+            .expect("workspace")
+            .id;
+        storage
+            .save_workspace(bas::model::Workspace {
+                id: meta.workspace,
+                name: "test".into(),
+                cwd: std::env::current_dir().expect("cwd"),
+                archived: false,
+                revision: 1,
+                created_at: meta.created_at,
+                updated_at: meta.updated_at,
+            })
+            .await
+            .expect("workspace");
         storage
             .create(meta.clone(), Some(ResumeData::acp("original")))
             .await
@@ -201,12 +245,6 @@ async fn storage_retry_recovers_one_runtime_without_resending_accepted_work() {
         storage.reject.store(true, Ordering::SeqCst);
         assert!(session.set_title("not committed").await.is_err());
         let failed = session.snapshot();
-        let registry = Registry::with_storage(
-            Arc::new(Catalog::with_defaults()),
-            Arc::new(LocalHost::default()),
-            Limits::default(),
-            storage.clone(),
-        );
         assert!(
             registry.restart_session(&session).await.is_err(),
             "still-full storage stays failed"
@@ -300,7 +338,24 @@ async fn every_commit_boundary_latches_failure_without_rewriting_committed_state
         "restore",
     ] {
         let storage = ControlledStore::new();
-        let meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
+        let meta = SessionMeta::new(
+            Default::default(),
+            SessionId::new(),
+            "embedded".into(),
+            Owner::current(),
+        );
+        storage
+            .save_workspace(bas::model::Workspace {
+                id: meta.workspace,
+                name: "test".into(),
+                cwd: std::env::current_dir().expect("cwd"),
+                archived: false,
+                revision: 1,
+                created_at: meta.created_at,
+                updated_at: meta.updated_at,
+            })
+            .await
+            .expect("workspace");
         storage.create(meta.clone(), None).await.expect("create");
         let session = Session::with_storage(meta, Limits::default(), Some(storage.clone()), true);
         let (updates, inbox) = mpsc::channel(16);

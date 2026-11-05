@@ -12,7 +12,12 @@ async fn synthetic_20k_history_profile() {
     let directory = tempfile::tempdir().expect("temporary directory");
     let path = directory.path().join("private/history.sqlite");
     let storage = LocalDb::open(path).await.expect("temporary database");
-    let mut meta = SessionMeta::new(SessionId::new(), "fixture".into(), Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "fixture".into(),
+        Owner::current(),
+    );
     storage.create(meta.clone(), None).await.expect("create");
     let events: Vec<_> = (0..20_000)
         .map(|index| {

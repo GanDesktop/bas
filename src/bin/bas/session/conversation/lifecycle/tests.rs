@@ -51,7 +51,12 @@ impl Agent for Reclaimable {
 async fn session() -> (Arc<Session>, Arc<Counts>) {
     let limits = Limits::default();
     let storage: Arc<dyn Storage> = Arc::new(storage::Memory::new(limits.history_capacity));
-    let mut meta = SessionMeta::new(SessionId::new(), "acp".into(), bas::model::Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "acp".into(),
+        bas::model::Owner::current(),
+    );
     meta.status = SessionStatus::Idle;
     storage
         .create(meta.clone(), Some(storage::ResumeData::acp("original")))

@@ -32,6 +32,7 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 
 fn request() -> CreateRequest {
     CreateRequest {
+        workspace: None,
         agent: "embedded".into(),
         owner: Owner::current(),
         cwd: None,
@@ -64,7 +65,12 @@ impl Agent for PendingAgent {
 
 async fn pending_session(limits: Limits) -> Arc<Session> {
     let session = Session::new(
-        SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current()),
+        SessionMeta::new(
+            Default::default(),
+            SessionId::new(),
+            "embedded".into(),
+            Owner::current(),
+        ),
         limits,
     );
     let (updates, inbox) = mpsc::channel(limits.live_capacity.get());
@@ -102,7 +108,12 @@ async fn startup_overlay_survives_content_eviction_before_ready() {
         async fn shutdown(&mut self) {}
     }
     let session = Session::new(
-        SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current()),
+        SessionMeta::new(
+            Default::default(),
+            SessionId::new(),
+            "embedded".into(),
+            Owner::current(),
+        ),
         Limits {
             history_capacity: NonZeroUsize::new(1).expect("one event"),
             ..Limits::default()

@@ -11,7 +11,9 @@ mod memory;
 pub use localdb::LocalDb;
 pub use memory::Memory;
 
-use bas::model::{AgentId, Cursor, Event, SessionId, SessionMeta, TurnId, TurnReceipt};
+use bas::model::{
+    AgentId, Cursor, Event, SessionId, SessionMeta, TurnId, TurnReceipt, Workspace, WorkspaceId,
+};
 use futures::future::BoxFuture;
 
 #[cfg(test)]
@@ -130,6 +132,16 @@ pub enum Error {
 
 /// Writes must finish before the daemon acknowledges or broadcasts.
 pub trait Storage: Send + Sync {
+    /// # Errors
+    /// Returns corrupt workspace records or storage I/O failures.
+    fn workspaces(&self) -> BoxFuture<'_, Result<Vec<Workspace>, Error>>;
+    /// # Errors
+    /// Returns serialization or storage I/O failures.
+    fn save_workspace(&self, workspace: Workspace) -> BoxFuture<'_, Result<(), Error>>;
+    /// # Errors
+    /// Returns storage I/O failures. Callers must remove associated sessions first.
+    fn delete_workspace(&self, id: WorkspaceId) -> BoxFuture<'_, Result<(), Error>>;
+
     /// Most recently published or used ACP agent, independent of session retention.
     ///
     /// # Errors

@@ -55,8 +55,25 @@ async fn fixture(kinds: Vec<EventKind>) -> Fixture {
     let storage = Arc::new(Memory::new(
         NonZeroUsize::new(kinds.len() + 1).expect("capacity"),
     ));
-    let mut meta = SessionMeta::new(SessionId::new(), "embedded".into(), Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "embedded".into(),
+        Owner::current(),
+    );
     meta.status = bas::model::SessionStatus::Stopped;
+    storage
+        .save_workspace(bas::model::Workspace {
+            id: meta.workspace,
+            name: "test".into(),
+            cwd: std::env::current_dir().expect("cwd"),
+            archived: false,
+            revision: 1,
+            created_at: meta.created_at,
+            updated_at: meta.updated_at,
+        })
+        .await
+        .expect("workspace");
     storage
         .create(meta.clone(), None)
         .await
@@ -341,8 +358,25 @@ impl crate::agent::Driver for NoReadStartup {
 #[tokio::test]
 async fn navigation_reads_never_launch_or_restore_acp() {
     let storage = Arc::new(Memory::new(NonZeroUsize::new(10).expect("capacity")));
-    let mut meta = SessionMeta::new(SessionId::new(), "read-only".into(), Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "read-only".into(),
+        Owner::current(),
+    );
     meta.status = bas::model::SessionStatus::Idle;
+    storage
+        .save_workspace(bas::model::Workspace {
+            id: meta.workspace,
+            name: "test".into(),
+            cwd: std::env::current_dir().expect("cwd"),
+            archived: false,
+            revision: 1,
+            created_at: meta.created_at,
+            updated_at: meta.updated_at,
+        })
+        .await
+        .expect("workspace");
     storage
         .create(
             meta.clone(),

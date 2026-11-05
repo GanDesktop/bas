@@ -3,7 +3,12 @@ use crate::model::{Cursor, Owner, SessionId};
 
 #[test]
 fn runtime_failure_does_not_rewrite_committed_metadata() {
-    let mut meta = SessionMeta::new(SessionId::new(), "fixture".into(), Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "fixture".into(),
+        Owner::current(),
+    );
     meta.status = SessionStatus::Working;
     meta.active_turn = Some(TurnId::new());
     meta.revision = Cursor::from_raw(7);

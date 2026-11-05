@@ -99,6 +99,22 @@ impl ControlledStore {
 }
 
 impl Storage for ControlledStore {
+    fn workspaces(&self) -> BoxFuture<'_, Result<Vec<bas::model::Workspace>, storage::Error>> {
+        self.inner.workspaces()
+    }
+    fn save_workspace(
+        &self,
+        workspace: bas::model::Workspace,
+    ) -> BoxFuture<'_, Result<(), storage::Error>> {
+        self.inner.save_workspace(workspace)
+    }
+    fn delete_workspace(
+        &self,
+        id: bas::model::WorkspaceId,
+    ) -> BoxFuture<'_, Result<(), storage::Error>> {
+        self.inner.delete_workspace(id)
+    }
+
     fn create(
         &self,
         meta: SessionMeta,

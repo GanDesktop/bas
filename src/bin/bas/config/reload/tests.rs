@@ -63,6 +63,7 @@ fn write_registrations(path: &std::path::Path, agents: Vec<AgentRegistration>) {
 
 fn request(id: &str) -> CreateRequest {
     CreateRequest {
+        workspace: None,
         agent: id.into(),
         owner: Owner::current(),
         cwd: None,

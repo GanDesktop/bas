@@ -100,7 +100,12 @@ fn malformed_envelopes_and_acp_payloads_are_rejected() {
 
 #[test]
 fn session_capabilities_modes_and_options_round_trip() {
-    let mut session = SessionMeta::new(SessionId::new(), "test".into(), Owner::current());
+    let mut session = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "test".into(),
+        Owner::current(),
+    );
     session.revision = Cursor::from_raw(123);
     session.active_turn = Some(TurnId::new());
     session.archived = true;
@@ -138,6 +143,7 @@ fn session_capabilities_modes_and_options_round_trip() {
 #[test]
 fn missing_owner_and_unknown_lifecycle_status_are_rejected() {
     let session = pb::Session {
+        workspace_id: crate::model::WorkspaceId::new().to_string(),
         id: SessionId::new().to_string(),
         status: pb::SessionStatus::Idle as i32,
         ..Default::default()
@@ -163,7 +169,12 @@ fn missing_owner_and_unknown_lifecycle_status_are_rejected() {
 #[test]
 fn runtime_failure_round_trips_independently_of_committed_status_and_revision() {
     use prost::Message;
-    let mut meta = SessionMeta::new(SessionId::new(), "fixture".into(), Owner::current());
+    let mut meta = SessionMeta::new(
+        Default::default(),
+        SessionId::new(),
+        "fixture".into(),
+        Owner::current(),
+    );
     meta.status = SessionStatus::Working;
     meta.active_turn = Some(TurnId::new());
     meta.revision = Cursor::from_raw(42);
@@ -187,6 +198,7 @@ fn runtime_failure_round_trips_independently_of_committed_status_and_revision() 
 #[test]
 fn missing_or_malformed_runtime_state_is_never_treated_as_healthy() {
     let snapshot = SessionSnapshot::from(SessionMeta::new(
+        Default::default(),
         SessionId::new(),
         "fixture".into(),
         Owner::current(),

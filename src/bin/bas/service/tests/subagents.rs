@@ -43,6 +43,7 @@ async fn subagents_flow_through_snapshots_history_and_reload_without_becoming_pa
     ));
     let session = registry
         .create(CreateRequest {
+            workspace: None,
             agent: "subagents".into(),
             owner: Owner::current(),
             cwd: Some(directory.path().into()),
