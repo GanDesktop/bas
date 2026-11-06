@@ -28,6 +28,8 @@ impl std::ops::DerefMut for Client {
 }
 
 impl Client {
+    /// Uses the supplied channel as configured. For custom channels, apply
+    /// [`super::heartbeat::client`] to the endpoint before connecting.
     pub fn new(channel: Channel) -> Self {
         Self {
             rpc: pb::bas_client::BasClient::new(channel.clone()),
@@ -38,7 +40,10 @@ impl Client {
     /// Returns an invalid endpoint or connection error.
     pub async fn connect(destination: String) -> Result<Self, tonic::transport::Error> {
         Ok(Self::new(
-            Endpoint::from_shared(destination)?.connect().await?,
+            super::heartbeat::client(Endpoint::from_shared(destination)?)
+                .connect_timeout(CONNECT_TIMEOUT)
+                .connect()
+                .await?,
         ))
     }
     pub fn channel(&self) -> Channel {
@@ -174,7 +179,8 @@ impl Client {
     /// accept the connection.
     pub async fn connect_at(address: SocketAddr) -> Result<Self, tonic::transport::Error> {
         let endpoint =
-            Endpoint::from_shared(format!("http://{address}"))?.connect_timeout(CONNECT_TIMEOUT);
+            super::heartbeat::client(Endpoint::from_shared(format!("http://{address}"))?)
+                .connect_timeout(CONNECT_TIMEOUT);
         Ok(Client::new(endpoint.connect().await?).with_payload_limit())
     }
 

@@ -241,12 +241,12 @@ impl Target {
     }
 
     fn endpoint(&self, timeout: Duration) -> Endpoint {
-        match self {
+        super::heartbeat::client(match self {
             Self::Tcp(address) => Endpoint::from_shared(format!("http://{address}"))
                 .expect("a validated TCP address produces a valid HTTP URI"),
             // HTTP/2 authority only; the connector never resolves this hostname.
             _ => Endpoint::from_static("http://bas.local"),
-        }
+        })
         .connect_timeout(timeout)
     }
 }

@@ -176,7 +176,7 @@ impl ConnectionOptions {
         self.validate()?;
         match (&self.target, &self.tls) {
             (Target::Mtls(address), Some(tls)) => Ok(Some(
-                Endpoint::from_shared(format!("https://{address}"))?
+                super::heartbeat::client(Endpoint::from_shared(format!("https://{address}"))?)
                     .connect_timeout(timeout)
                     .tls_config(tls.load()?)?,
             )),

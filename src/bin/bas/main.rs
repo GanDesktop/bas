@@ -84,7 +84,7 @@ async fn run(config: Config) -> Result<()> {
     let service = service::Service::new(Arc::clone(&registry)).with_manager(Arc::clone(&manager));
     let acp = bas_server::Gateway::new(service.clone()).with_authentication(service.clone());
     for target in &config.listen {
-        let mut server = tonic::transport::Server::builder();
+        let mut server = bas::service::heartbeat::server(tonic::transport::Server::builder());
         let bind_target = match target {
             bas::service::Target::Mtls(address) => {
                 server = server.tls_config(

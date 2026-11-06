@@ -13,6 +13,10 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 #[path = "daemon/transport.rs"]
 mod transport;
 
+#[cfg(any(unix, windows))]
+#[path = "daemon/heartbeat.rs"]
+mod heartbeat;
+
 #[cfg(unix)]
 #[path = "daemon/tls.rs"]
 mod tls;

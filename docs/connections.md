@@ -17,6 +17,22 @@ Bas 和 BasT 共用连接目标格式。Bas 和 BasT 默认使用同一系统用
 前端自己的外观、连接配置、缓存和消息渲染由前端负责；这些库不保存前端设置。
 完整职责边界见 [crate 组织](design/crates.md)。
 
+## 连接心跳
+
+客户端和 daemon 的所有入口统一启用 HTTP/2 PING/ACK：15 秒空闲后探测，
+5 秒内没有收到 ACK 就关闭失效连接。客户端没有活动 RPC 时也会探测。
+TCP、mTLS、Unix socket 和 Named Pipe 使用同一策略，定义在
+`bas-protocol::connection::heartbeat`。这与单个 RPC 的业务超时相互独立。
+
+心跳检测的是传输连接是否存活，不代表 Agent 就绪或某个任务仍在推进。
+断线会让挂起的流报告传输错误；Channel 在后续请求时重连，订阅方仍负责
+使用已有 cursor 重新订阅。不会自动重放 Prompt，也不会删除会话或停止 Agent。
+HTTP/2 对端直接响应 PING，不新增 BAS RPC、ACP 消息、历史事件或协议版本要求。
+
+`Client::connect*`、`Target::channel*` 和 `ConnectionOptions::channel*` 自动应用此策略。
+使用 `Client::new` 注入自建 Channel 时，调用者应先用 `heartbeat::client(endpoint)`
+配置 Endpoint；自建服务使用 `heartbeat::server(builder)` 配置监听。
+
 ## 默认本地连接
 
 ```sh
