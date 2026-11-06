@@ -201,3 +201,90 @@ async fn empty_workspace_and_session_membership_survive_restart_and_delete() {
     assert!(storage.workspaces().await.expect("workspaces").is_empty());
     assert!(storage.list().await.expect("sessions").is_empty());
 }
+
+#[tokio::test]
+async fn provider_launch_validates_before_registering_and_reuses_directory() {
+    let registry = registry(100);
+    let service = Service::with_workspace_providers(
+        Arc::clone(&registry),
+        crate::workspace::Providers::default(),
+    );
+    let descriptors = service
+        .list_workspace_providers(Request::new(pb::ListWorkspaceProvidersRequest {}))
+        .await
+        .expect("providers")
+        .into_inner()
+        .providers;
+    let provider = &descriptors[0];
+    let directory = tempfile::tempdir().expect("directory");
+    let mut request = pb::OpenWorkspaceRequest {
+        provider_id: provider.id.clone(),
+        schema_version: provider.schema_version,
+        parameters_json: br#"{"directory":1}"#.to_vec(),
+        name: None,
+    };
+    assert_eq!(
+        service
+            .open_workspace(Request::new(request.clone()))
+            .await
+            .expect_err("wrong type")
+            .code(),
+        Code::InvalidArgument
+    );
+    assert!(registry.workspaces().await.is_empty());
+    request.parameters_json =
+        serde_json::to_vec(&serde_json::json!({"directory": directory.path()}))
+            .expect("parameters");
+    let first = service
+        .open_workspace(Request::new(request.clone()))
+        .await
+        .expect("open")
+        .into_inner();
+    let second = service
+        .open_workspace(Request::new(request.clone()))
+        .await
+        .expect("reopen")
+        .into_inner();
+    assert_eq!(first.id, second.id);
+    request.schema_version += 1;
+    assert_eq!(
+        service
+            .open_workspace(Request::new(request))
+            .await
+            .expect_err("stale schema")
+            .code(),
+        Code::FailedPrecondition
+    );
+}
+
+#[tokio::test]
+async fn directory_browse_pages_folders_without_creating_a_workspace() {
+    let registry = registry(100);
+    let service = Service::new(Arc::clone(&registry));
+    let directory = tempfile::tempdir().expect("directory");
+    for n in 0..130 {
+        std::fs::create_dir(directory.path().join(format!("folder-{n:03}"))).expect("folder");
+    }
+    std::fs::write(directory.path().join("file"), "content").expect("file");
+    let request = pb::BrowseServerDirectoriesRequest {
+        path: Some(directory.path().to_str().expect("path").into()),
+        cursor: None,
+    };
+    let first = service
+        .browse_server_directories(Request::new(request.clone()))
+        .await
+        .expect("browse")
+        .into_inner();
+    assert_eq!(first.directories.len(), 128);
+    let next = service
+        .browse_server_directories(Request::new(pb::BrowseServerDirectoriesRequest {
+            cursor: first.next_cursor,
+            ..request
+        }))
+        .await
+        .expect("next page")
+        .into_inner();
+    assert_eq!(next.directories.len(), 2);
+    assert!(next.next_cursor.is_none());
+    assert!(registry.workspaces().await.is_empty());
+}

@@ -457,3 +457,66 @@ ACP 原始定义参见 [内容类型](https://agentclientprotocol.com/protocol/v
 `force` 只跳过非空检查：格式错误、工作区不存在和持久化失败仍返回错误。确认由交互客户端负责，RPC 不弹出确认或模拟用户批准。
 
 工作区存储于 SQLite `workspaces` 表，内存存储提供相同生命周期语义。会话记录必须包含有效的工作区引用；开发阶段不为旧会话记录推导工作区或填充缺失 ID。
+
+
+## Workspace provider launch parameters
+
+`ListWorkspaceProviders` returns each provider's stable ID, display title, schema
+version and JSON Schema 2020-12 document. `OpenWorkspace` accepts that provider ID,
+schema version, JSON parameters and an optional workspace name. It validates the
+parameters before invoking the provider. A stale version returns
+`FAILED_PRECONDITION`; clients reload the descriptor before submitting again.
+The existing `CreateWorkspace(cwd, name)` RPC remains available for directory clients.
+
+Providers derive their parameter schema with Schemars (`workspace::schema::generate`)
+and Serde types. `workspace::schema::Validator` delegates validation to the
+`jsonschema` crate; external HTTP/file reference retrieval is disabled. The
+`workspace-schema` feature enables these libraries without adding them to consumers
+that only need the wire models. Use bundled local `$defs`/`$ref` definitions.
+Schema defaults are annotations: providers apply runtime defaults with Serde after
+validation, rather than mutating JSON through a custom schema evaluator.
+
+The `x-bas` field annotation describes input semantics:
+
+```json
+{
+  "type": "string",
+  "title": "Directory",
+  "minLength": 1,
+  "x-bas": { "type": "ServerDirectoryPath" }
+}
+```
+
+`ServerDirectoryPath` is a path in the selected BAS connection's filesystem
+namespace. A frontend may use a native directory picker only when its connection
+explicitly declares that it shares the frontend's filesystem. Otherwise it uses
+`BrowseServerDirectories`. TCP loopback and Unix socket addresses do not establish
+shared filesystem ownership. Paths returned by the daemon must not be normalized
+using frontend platform path rules.
+
+`BrowseServerDirectories` works before any workspace exists. An absent path opens
+the daemon user's home (or its current directory if no home is available). Responses
+contain the canonical current path, parent, child directory names/paths, and a
+continuation cursor. Pages contain at most 128 entries; directory changes between
+requests may change the listing. The operation runs with the daemon's filesystem
+permissions and does not create directories or workspaces.
+
+A field with `"x-bas": { "choices": "sandboxes" }` references a provider-owned
+choice source. `QueryWorkspaceChoices` accepts its source ID, partial parameters,
+search query and continuation cursor, and returns labeled JSON values. Partial
+parameters are deliberately not validated as a complete launch request. Static
+choices use `enum` instead.
+
+Use a Serde tagged enum to describe existing/new resources. It generates `oneOf`
+branches with a required constant tag, for example
+`{"mode":"existing","sandbox_id":"box-1"}` versus
+`{"mode":"new","image":"image","cpu":2}`. Both are ordinary launch parameters;
+the provider owns their meaning. The shipped provider is `directory`. Sandbox
+acquisition and execution backends are not shipped by this change; tests exercise
+the same existing/new schema contract without claiming a sandbox runtime.
+
+The native frontend renders objects, nested fields, primitive values, enums,
+nullable scalar fields, nonrecursive local references and `oneOf` branches. Arrays
+use JSON input with library validation. It rejects unsupported required input
+semantics or form structures, including conditional schemas and recursive forms,
+instead of silently dropping them. Optional display annotations may be ignored.

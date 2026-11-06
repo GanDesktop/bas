@@ -9,11 +9,14 @@ publish = false
 
 [features]
 default = []
+workspace-schema = ["dep:schemars", "dep:jsonschema"]
 client = ["transport"]
 server = ["transport"]
 transport = ["dep:futures", "dep:hyper-util", "dep:rustls", "dep:tokio", "dep:tower", "dep:nix", "dep:windows-sys", "tonic/transport", "tonic/tls-ring", "tonic/gzip"]
 
 [dependencies]
+schemars = { version = "1.2", optional = true }
+jsonschema = { version = "0.60", default-features = false, optional = true }
 agent-client-protocol-schema = { version = "=1.11.0", default-features = false, features = ["unstable", "unstable_protocol_v2"] }
 dirs = "6"
 email_address = { version = "0.2", default-features = false }

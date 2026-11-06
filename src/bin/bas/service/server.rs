@@ -30,6 +30,7 @@ const DEFAULT_PAGE: usize = 128;
 #[derive(Clone)]
 pub struct Service {
     registry: Arc<Registry>,
+    providers: Arc<crate::workspace::Providers>,
     manager: Option<Arc<crate::management::Manager>>,
 }
 
@@ -37,8 +38,16 @@ impl Service {
     /// Serves the sessions held by `registry`.
     #[must_use]
     pub fn new(registry: Arc<Registry>) -> Self {
+        Self::with_workspace_providers(registry, crate::workspace::Providers::default())
+    }
+
+    pub fn with_workspace_providers(
+        registry: Arc<Registry>,
+        providers: crate::workspace::Providers,
+    ) -> Self {
         Self {
             registry,
+            providers: Arc::new(providers),
             manager: None,
         }
     }
@@ -76,6 +85,90 @@ impl Service {
 
 #[tonic::async_trait]
 impl Bas for Service {
+    async fn list_workspace_providers(
+        &self,
+        _: Request<pb::ListWorkspaceProvidersRequest>,
+    ) -> Result<Response<pb::ListWorkspaceProvidersResponse>, Status> {
+        let providers = self
+            .providers
+            .descriptors()
+            .map(|descriptor| {
+                Ok(pb::WorkspaceProvider {
+                    id: descriptor.id.clone(),
+                    title: descriptor.title.clone(),
+                    schema_version: descriptor.schema_version,
+                    schema_json: serde_json::to_vec(&descriptor.schema)
+                        .map_err(|error| Status::internal(error.to_string()))?,
+                })
+            })
+            .collect::<Result<_, Status>>()?;
+        Ok(Response::new(pb::ListWorkspaceProvidersResponse {
+            providers,
+        }))
+    }
+
+    async fn open_workspace(
+        &self,
+        request: Request<pb::OpenWorkspaceRequest>,
+    ) -> Result<Response<pb::Workspace>, Status> {
+        let workspace = self
+            .providers
+            .open(&self.registry, request.into_inner())
+            .await
+            .map_err(workspace_error)?;
+        Ok(Response::new(
+            pb::Workspace::try_from(&workspace).map_err(metadata_error)?,
+        ))
+    }
+
+    async fn query_workspace_choices(
+        &self,
+        request: Request<pb::QueryWorkspaceChoicesRequest>,
+    ) -> Result<Response<pb::QueryWorkspaceChoicesResponse>, Status> {
+        let page = self
+            .providers
+            .choices(request.into_inner())
+            .await
+            .map_err(workspace_error)?;
+        let choices = page
+            .choices
+            .into_iter()
+            .map(|choice| {
+                Ok(pb::WorkspaceChoice {
+                    value_json: serde_json::to_vec(&choice.value)
+                        .map_err(|error| Status::internal(error.to_string()))?,
+                    label: choice.label,
+                })
+            })
+            .collect::<Result<_, Status>>()?;
+        Ok(Response::new(pb::QueryWorkspaceChoicesResponse {
+            choices,
+            next_cursor: page.next_cursor,
+        }))
+    }
+
+    async fn browse_server_directories(
+        &self,
+        request: Request<pb::BrowseServerDirectoriesRequest>,
+    ) -> Result<Response<pb::BrowseServerDirectoriesResponse>, Status> {
+        let page = crate::workspace::browse::directories(request.into_inner())
+            .await
+            .map_err(|error| match &error {
+                crate::workspace::browse::Error::Io(io)
+                    if io.kind() == std::io::ErrorKind::PermissionDenied =>
+                {
+                    Status::permission_denied(error.to_string())
+                }
+                crate::workspace::browse::Error::Io(io)
+                    if io.kind() == std::io::ErrorKind::NotFound =>
+                {
+                    Status::not_found(error.to_string())
+                }
+                _ => Status::invalid_argument(error.to_string()),
+            })?;
+        Ok(Response::new(page))
+    }
+
     async fn create_workspace(
         &self,
         request: Request<pb::CreateWorkspaceRequest>,
@@ -1284,5 +1377,15 @@ impl bas_server::Authentication for Service {
     ) -> futures::future::BoxFuture<'static, Result<bas_server::AuthenticationEvents, Status>> {
         let service = self.clone();
         Box::pin(async move { service.authentication_stream(input).await })
+    }
+}
+
+fn workspace_error(error: crate::workspace::Error) -> Status {
+    use crate::workspace::Error;
+    match error {
+        Error::Create(error) => error.into(),
+        Error::Unknown(_) => Status::not_found(error.to_string()),
+        Error::Version => Status::failed_precondition(error.to_string()),
+        _ => Status::invalid_argument(error.to_string()),
     }
 }

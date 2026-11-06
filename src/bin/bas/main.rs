@@ -13,6 +13,7 @@ mod session;
 mod storage;
 mod system;
 mod tracing;
+mod workspace;
 
 use std::sync::Arc;
 

@@ -9,6 +9,10 @@ package bas.v1;
 
 // Daemon administration and session I/O.
 service Bas {
+  rpc ListWorkspaceProviders(ListWorkspaceProvidersRequest) returns (ListWorkspaceProvidersResponse);
+  rpc OpenWorkspace(OpenWorkspaceRequest) returns (Workspace);
+  rpc QueryWorkspaceChoices(QueryWorkspaceChoicesRequest) returns (QueryWorkspaceChoicesResponse);
+  rpc BrowseServerDirectories(BrowseServerDirectoriesRequest) returns (BrowseServerDirectoriesResponse);
   rpc CreateWorkspace(CreateWorkspaceRequest) returns (Workspace);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
   rpc GetWorkspace(GetWorkspaceRequest) returns (Workspace);
@@ -724,4 +728,45 @@ message AcpObservation {
   optional string turn = 5;
   // First history position represented by this message.
   uint64 start = 6;
+}
+
+// Provider schemas and parameters are canonical JSON, independent of the frontend toolkit.
+message ListWorkspaceProvidersRequest {}
+message WorkspaceProvider {
+  string id = 1;
+  string title = 2;
+  uint32 schema_version = 3;
+  bytes schema_json = 4;
+}
+message ListWorkspaceProvidersResponse { repeated WorkspaceProvider providers = 1; }
+message OpenWorkspaceRequest {
+  string provider_id = 1;
+  uint32 schema_version = 2;
+  bytes parameters_json = 3;
+  optional string name = 4;
+}
+message QueryWorkspaceChoicesRequest {
+  string provider_id = 1;
+  uint32 schema_version = 2;
+  string source = 3;
+  bytes parameters_json = 4;
+  string query = 5;
+  optional string cursor = 6;
+}
+message WorkspaceChoice { bytes value_json = 1; string label = 2; }
+message QueryWorkspaceChoicesResponse {
+  repeated WorkspaceChoice choices = 1;
+  optional string next_cursor = 2;
+}
+message BrowseServerDirectoriesRequest {
+  // Absent starts at the daemon user's home. Paths are interpreted only by the daemon.
+  optional string path = 1;
+  optional string cursor = 2;
+}
+message ServerDirectory { string name = 1; string path = 2; }
+message BrowseServerDirectoriesResponse {
+  string path = 1;
+  optional string parent = 2;
+  repeated ServerDirectory directories = 3;
+  optional string next_cursor = 4;
 }

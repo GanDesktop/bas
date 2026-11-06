@@ -9,6 +9,7 @@ publish = false
 
 [features]
 default = []
+workspace-schema = ["bas-protocol/workspace-schema"]
 
 [dependencies]
 bas-protocol = { path = "../protocol", features = ["client"] }

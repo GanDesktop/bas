@@ -12,3 +12,5 @@
 pub mod config;
 pub mod service;
 pub use bas_protocol::{acp, acp_v2, authentication, management, model};
+
+pub use bas_protocol::workspace;

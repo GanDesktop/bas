@@ -22,7 +22,7 @@ name = "bast"
 path = "src/bin/bast/main.rs"
 
 [dependencies]
-bas-protocol = { path = "crates/protocol", features = ["server"] }
+bas-protocol = { path = "crates/protocol", features = ["server", "workspace-schema"] }
 bas-client = { path = "crates/client" }
 bas-server = { path = "crates/server" }
 agent-client-protocol = { version = "=3.3.0", features = ["process", "schemars", "unstable", "unstable_protocol_v2"] }
