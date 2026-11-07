@@ -1,35 +1,12 @@
-# Manually configured mutual TLS
+# mTLS 配置
 
-`mtls://HOST:PORT` is a separate, explicitly authenticated transport. It is not
-`tcp://`, and neither transport falls back to the other. Local same-user IPC
-remains the default; plaintext TCP remains an explicit supported option.
+BAS 支持双向证书认证。服务端验证客户端 CA，客户端验证服务端 CA 及目标的 DNS/IP SAN。
+所有获准客户端共享该实例的执行环境；证书不提供实例内用户隔离。
 
-The daemon requires a client certificate signed by its configured client CA.
-Clients require the configured server CA and verify the certificate's DNS name
-or IP SAN against the target. System DNS/hosts resolution is unchanged. There is
-no insecure/skip-verification switch. An optional expected server name overrides
-the verification name and DNS SNI, **not** the network destination.
+## 准备证书
 
-## Trust boundary
-
-Every trusted client accesses the **same execution environment and sessions** of
-one daemon. Certificates do not create OS users, filesystem isolation, per-user
-accounts, or per-certificate permissions. Only give client certificates to people
-or machines you trust to use that environment.
-
-Connected clients can edit the daemon's Agent configuration and install, remove,
-check, authenticate and log out agents through RPC. Server paths are never opened
-as client-local files. Terminal sign-in that requires launching a command locally
-must still be completed on the server host. This is CA-based trust, not account
-login, QR pairing, a device registry, a relay, or device revocation.
-
-## Create certificates
-
-Use your organization's CA if available. For a small manually managed deployment,
-the following OpenSSL example creates a dedicated CA and short-lived leaf
-certificates. Run it in a **new private directory outside source control** on a
-trusted administrative machine. Replace `bas.example.internal` and `192.0.2.10`
-with the actual service name/IP. Only include IP SANs if clients will use them.
+已有 CA 时使用其签发的证书。以下示例在私有目录中创建 CA 与有效期 30 天的服务端、客户端证书；
+将域名和 IP 替换为实际地址，每个客户端使用独立密钥。
 
 ```sh
 umask 077
@@ -63,20 +40,11 @@ openssl x509 -req -in client.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
   -days 30 -sha256 -extfile client.ext -out client.pem
 ```
 
-Distribute files over an authenticated secure channel:
+服务端需要 `server.pem`、`server.key`、客户端 CA；客户端需要 `client.pem`、`client.key`、服务端 CA。
+CA 私钥不分发给任何端点。证书为 PEM，链按叶证书、再中间证书排列；密钥文件只允许所属用户读取。
+参数使用文件路径，建议绝对路径。端点私钥需可无人值守读取。
 
-- Server: `server.pem`, `server.key`, and the CA bundle authorized to issue clients.
-- Client: `client.pem`, `client.key`, and the CA bundle authorized to issue servers.
-- Neither endpoint needs `ca.key`. Separate client/server CAs are also supported.
-
-Keep private keys readable only by the intended service/client user (Unix mode
-`0600` in a `0700` directory; equivalent restricted ACLs on Windows). The endpoint
-keys in this example are unencrypted PEM for unattended loading; protect the files.
-Certificate chains should be leaf-first PEM followed by intermediates. Paths are
-file references, not PEM contents. Prefer absolute paths: relative paths resolve
-against the process working directory, not the settings file.
-
-## Start a daemon and CLI
+## 启动
 
 ```sh
 bas --listen local --listen mtls://0.0.0.0:7338 \
@@ -90,36 +58,14 @@ bast --server mtls://bas.example.internal:7338 \
   --tls-key /private/client/client.key agents
 ```
 
-To connect by a different address while verifying a known DNS certificate name,
-add `--tls-server-name bas.example.internal` to `bast`. Do not use this to ignore
-a name mismatch without independently confirming the expected server identity.
+使用不同网络地址访问同一服务时，可用 `--tls-server-name` 指定证书验证名称，网络目标保持不变。
+TLS 参数只作用于 `mtls://` 入口；缺少证书配置时启动失败，不回退到明文。
+多入口共享状态，明文 TCP 入口仍是无认证访问。
 
-You may also add `--listen tcp://127.0.0.1` to the daemon. All listeners share
-the same registry/runtime; they use separate tonic listener TLS configuration.
-TLS flags apply only to `mtls://` listeners. Missing/incomplete TLS options fail
-closed. TLS options on a non-TLS CLI target are rejected. No extra listeners are
-implicitly opened when `--listen` is supplied.
+## 换证与撤销
 
-Plaintext TCP is unauthenticated access to the same environment: exposing a plain
-listener to untrusted peers bypasses the protection of the TLS listener. Choose
-bind addresses and network access deliberately; Bas does not configure firewalls.
+服务端在启动时加载证书和 CA，修改后重启；客户端在创建 Channel 时加载，换证后需创建新连接。
+当前没有设备撤销列表或 CRL/OCSP。受信任 CA 签发的有效客户端证书均可访问服务。
+撤销整个信任域需要替换客户端 CA、重新签发授权设备证书并重启服务；已有长连接不会逐请求重验。
 
-## Rotation, reload, and revocation limits
-
-- Daemon certificates, keys and client CA trust load at startup. Restart the daemon
-  after changing them; Agent catalog hot reload does **not** reload TLS files.
-- Each client channel loads credentials when constructed and retains them on
-  reconnect. New client channels may read updated files while existing channels retain the previous material. Reconnect after
-  rotation for a consistent identity; each new `bast` invocation loads files anew.
-- Cache/window identity includes file references, not a content fingerprint.
-  Overwriting a file does not automatically invalidate cached frontend state.
-- There is no per-device revocation list, CRL/OCSP configuration, or certificate
-  pin registry in this slice. A trusted CA authorizes every otherwise-valid client
-  certificate it issues. Removing one leaf file on a server does not revoke it.
-- To remove a compromised trust domain, replace the trusted client CA, reissue
-  authorized clients and restart the daemon. Existing TLS sessions do not recheck
-  certificate expiry/trust on each RPC; restarting terminates them. Short-lived
-  certificates limit new handshakes after expiry but are not immediate revocation.
-
-Tests generate temporary CA/key material at runtime using the published
-MIT/Apache-2.0 `rcgen` crate; no private keys are committed as fixtures.
+设备配对与撤销规划见[远程接入](design/remote-access.md)。

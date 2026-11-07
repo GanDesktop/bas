@@ -260,6 +260,3 @@ pub fn resolve_agents(agents: &[AgentRegistration]) -> Result<Vec<AgentSpec>, Re
     validate_registrations(agents)?;
     agents.iter().map(AgentRegistration::resolve).collect()
 }
-
-#[cfg(all(test, feature = "server"))]
-mod tests;

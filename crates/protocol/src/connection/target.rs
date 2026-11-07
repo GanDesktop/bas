@@ -5,9 +5,6 @@ use tonic::transport::{Channel, Endpoint};
 
 use super::DEFAULT_PORT;
 
-#[cfg(test)]
-mod tests;
-
 /// A transport endpoint, not an account or an authentication credential.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Target {

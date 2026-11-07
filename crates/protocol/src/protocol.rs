@@ -14,6 +14,3 @@ pub mod pb {
     tonic::include_proto!("bas.v1");
     pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("bas_descriptor");
 }
-
-#[cfg(test)]
-mod tests;

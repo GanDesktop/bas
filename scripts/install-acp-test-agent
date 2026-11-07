@@ -4,7 +4,7 @@ set -euo pipefail
 if [[ ${1:-} = -h || ${1:-} = --help ]]; then
     cat <<'USAGE'
 Usage: scripts/install-acp-test-agent [nix profile add options...]
-Build, test and install the standalone ACP test agent into your Nix profile.
+Build, test and install the ACP test agent into your Nix profile.
 Does not install Bas, restart services, or change Agent configuration.
 Includes untracked source files; excludes .env files and build outputs.
 USAGE

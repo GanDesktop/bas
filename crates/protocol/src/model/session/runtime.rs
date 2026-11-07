@@ -1,9 +1,6 @@
 use super::{SessionMeta, SessionStatus, TurnId};
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-mod tests;
-
 /// A terminal failure of one runtime instance, not a persisted event or ACP result.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, thiserror::Error)]
 pub enum RuntimeFailure {

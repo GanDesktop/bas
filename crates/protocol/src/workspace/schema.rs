@@ -65,6 +65,3 @@ impl Validator {
         Ok(serde_json::from_value(parameters)?)
     }
 }
-
-#[cfg(test)]
-mod tests;

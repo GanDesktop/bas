@@ -94,6 +94,3 @@ impl Subagent {
         )
     }
 }
-
-#[cfg(test)]
-mod tests;

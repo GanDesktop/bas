@@ -17,6 +17,8 @@ use tonic::{Request, Response, Status};
 
 mod authentication;
 mod connection;
+mod protocol;
+use connection::Connection;
 mod session;
 
 pub type AuthenticationInput =
@@ -45,28 +47,6 @@ struct Prepared {
 struct State {
     prepared: HashMap<String, Prepared>,
     active: HashMap<String, Arc<Connection>>,
-}
-struct Connection {
-    target: pb::prepare_acp_request::Target,
-    interactive: bool,
-    callbacks_only: bool,
-    capabilities: Mutex<serde_json::Value>,
-    auxiliary: broadcast::Sender<pb::AcpAuxiliaryEvent>,
-    authentication: Mutex<Option<mpsc::Sender<pb::AuthenticationInput>>>,
-}
-impl Connection {
-    fn supports_elicitation(&self, params: &serde_json::Value) -> bool {
-        let capabilities = self.capabilities.lock().expect("ACP client capabilities");
-        let mode = params
-            .get("mode")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("form");
-        matches!(mode, "form" | "url")
-            && capabilities
-                .get("elicitation")
-                .and_then(|value| value.get(mode))
-                .is_some_and(serde_json::Value::is_object)
-    }
 }
 
 pub struct Gateway<B> {
@@ -195,14 +175,7 @@ impl<B: Bas + 'static> AcpTransport for Gateway<B> {
                 .ok_or_else(|| {
                     Status::not_found("prepared connection expired or already consumed")
                 })?;
-            let connection = Arc::new(Connection {
-                target: prepared.target,
-                interactive: prepared.interactive,
-                callbacks_only: prepared.callbacks_only,
-                capabilities: Mutex::new(serde_json::Value::Null),
-                auxiliary: broadcast::channel(32).0,
-                authentication: Mutex::default(),
-            });
+            let connection = Arc::new(Connection::new(prepared));
             state.active.insert(id.clone(), connection.clone());
             connection
         };
@@ -214,8 +187,9 @@ impl<B: Bas + 'static> AcpTransport for Gateway<B> {
         let gateway = self.clone();
         let task = tokio::spawn(async move {
             let _lease = lease;
-            let result =
-                connection::serve(gateway, connection, request.into_inner(), send.clone()).await;
+            let result = connection
+                .serve(gateway, request.into_inner(), send.clone())
+                .await;
             if let Err(error) = result {
                 let _ = send.send(Err(Status::unavailable(error.to_string()))).await;
             }

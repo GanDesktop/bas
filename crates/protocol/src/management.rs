@@ -1,5 +1,7 @@
 //! Agent discovery and installation metadata shared by daemon and clients.
 
+pub use crate::protocol::pb::agent_operation::Phase;
+
 use crate::config::AgentSpec;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

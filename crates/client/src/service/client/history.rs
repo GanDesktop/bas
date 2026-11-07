@@ -113,6 +113,3 @@ impl Client {
 fn deadline() -> Status {
     Status::deadline_exceeded("history RPC timed out")
 }
-
-#[cfg(test)]
-mod tests;

@@ -51,9 +51,9 @@
         system:
         let
           pkgs = pkgsFor system;
-          toolchain = pkgs.rust-bin.fromRustupToolchainFile ./acp-test-agent/rust-toolchain.toml;
+          toolchain = toolchainFor pkgs;
         in
-        pkgs.callPackage ./acp-test-agent/package.nix {
+        pkgs.callPackage ./nix/acp-test-agent.nix {
           rustPlatform = pkgs.makeRustPlatform {
             cargo = toolchain;
             rustc = toolchain;

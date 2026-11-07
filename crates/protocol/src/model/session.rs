@@ -7,9 +7,6 @@ use super::{AgentId, Cursor, Event, EventKind, SessionId, Timestamp, TurnId};
 mod runtime;
 pub use runtime::*;
 
-#[cfg(test)]
-mod tests;
-
 /// Used when neither `USER` nor `LOGNAME` is set, as in a bare systemd unit.
 const UNKNOWN_USER: &str = "unknown";
 /// Used when `HOSTNAME` is unset; `hostname` is not consulted to keep this

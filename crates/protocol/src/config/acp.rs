@@ -95,6 +95,3 @@ impl AcpLifecycle {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests;

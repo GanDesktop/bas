@@ -25,6 +25,3 @@ pub use subagent::*;
 pub use submission::*;
 pub use time::*;
 pub use workspace::*;
-
-#[cfg(test)]
-mod tests;

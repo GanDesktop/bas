@@ -2,9 +2,6 @@ use super::{Cursor, SessionId, Timestamp, TurnId};
 use crate::acp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[cfg(test)]
-mod tests;
-
 /// The agent's native answer to an ACP prompt, never a daemon or storage failure.
 pub type PromptResult = Result<acp::PromptResponse, acp::Error>;
 

@@ -1,0 +1,36 @@
+[package]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+name = "acp-test-agent"
+description = "Scripted ACP v1/v2 test agent for exercising clients"
+readme = "README.md"
+rust-version = "1.88"
+
+[dependencies]
+agent-client-protocol = { workspace = true, features = [
+    "stdio",
+    "unstable",
+    "unstable_protocol_v2",
+] }
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+time = { version = "0.3", features = ["formatting"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+url = "2"
+
+[dev-dependencies]
+# `process` is only needed by the integration tests that launch the agent and
+# drive it with the SDK's client side. Cargo unifies these features for tests.
+agent-client-protocol = { workspace = true, features = [
+    "process",
+    "stdio",
+    "unstable",
+    "unstable_protocol_v2",
+] }

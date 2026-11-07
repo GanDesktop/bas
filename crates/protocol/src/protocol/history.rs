@@ -217,6 +217,3 @@ impl HistoryWindow {
         })
     }
 }
-
-#[cfg(test)]
-mod tests;

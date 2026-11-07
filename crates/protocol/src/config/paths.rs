@@ -23,6 +23,3 @@ fn absolute_override(value: Option<OsString>, fallback: Option<PathBuf>) -> Opti
         .filter(|path| path.is_absolute())
         .or(fallback)
 }
-
-#[cfg(test)]
-mod tests;

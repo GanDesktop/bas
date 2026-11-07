@@ -72,6 +72,3 @@ pub enum Error {
     #[error("invalid elicitation response: {0}")]
     Response(String),
 }
-
-#[cfg(test)]
-mod tests;

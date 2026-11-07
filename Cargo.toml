@@ -1,101 +1,18 @@
-[package]
-name = "bas"
-version = "0.1.0"
-edition = "2024"
-description = "Bas — Basic Agent Service"
-license = "MIT"
-
 [workspace]
-members = ["crates/protocol", "crates/client", "crates/server"]
+members = ["bin/*", "crates/*"]
+default-members = ["bin/bas", "bin/bast"]
 resolver = "3"
 
-[lib]
-name = "bas"
-path = "src/lib.rs"
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/GanDesktop/bas"
+publish = false
 
-[[bin]]
-name = "bas"
-path = "src/bin/bas/main.rs"
-
-[[bin]]
-name = "bast"
-path = "src/bin/bast/main.rs"
-
-[dependencies]
-bas-protocol = { path = "crates/protocol", features = ["server", "workspace-schema"] }
+[workspace.dependencies]
+bas-protocol = { path = "crates/protocol" }
 bas-client = { path = "crates/client" }
 bas-server = { path = "crates/server" }
-agent-client-protocol = { version = "=3.3.0", features = ["process", "schemars", "unstable", "unstable_protocol_v2"] }
-anyhow = "1"
-async-trait = "0.1"
-clap = { version = "4", features = ["derive", "env"] }
-dirs = "6"
-futures = "0.3"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "json", "stream"] }
-regex = "1"
-sha2 = "0.10"
-tar = "0.4"
-flate2 = "1"
-bzip2 = "0.6"
-zip = { version = "4", default-features = false, features = ["deflate"] }
-semver = "1"
-tempfile = "3"
-prost = "0.14"
-toasty = { version = "=0.11.0", default-features = false, features = ["sqlite", "migration"] }
-toasty-driver-sqlite = "=0.11.0"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = { version = "2" }
-tokio = { version = "1", features = [
-    "fs",
-    "io-util",
-    "macros",
-    "net",
-    "process",
-    "rt-multi-thread",
-    "signal",
-    "sync",
-    "time",
-] }
-tokio-stream = { version = "0.1", features = ["net", "sync"] }
-tokio-util = { version = "0.7", features = ["rt"] }
-tonic = { version = "0.14", features = ["tls-ring", "gzip"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-uuid = { version = "1", features = ["serde", "v4", "v7"] }
-which = "8"
-
-[dev-dependencies]
-# MIT/Apache-2.0; runtime-generated test certificates, never fixture keys.
-rcgen = "=0.13.2"
-# Test-only external SQLite writer for lock-contention regression coverage.
-rusqlite = "=0.40.2"
-tempfile = "3"
-# Exercise the same Windows progress-channel API on non-Windows test hosts.
-reedline = { version = "=0.51.0", default-features = false, features = ["external_printer"] }
-
-[target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = ["fs", "poll", "process", "signal", "term", "user"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-sd-notify = "0.5"
-tracing-journald = "0.3"
-
-[target.'cfg(windows)'.dependencies]
-process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "job-object", "kill-on-drop"] }
-# MIT; crates.io release from https://github.com/nushell/reedline.
-# Its external break signal cancels event-based input without a cooked console read.
-# 0.51 provides a cloneable ExternalPrinter so pending progress survives reader exit.
-reedline = { version = "=0.51.0", default-features = false, features = ["external_printer"] }
-windows-sys = { version = "0.61", features = [
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_Security_Authorization",
-    "Win32_System_Console",
-    "Win32_System_Pipes",
-    "Win32_System_SystemInformation",
-    "Win32_System_Threading",
-] }
-
-[target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+bas-config = { path = "crates/config" }
+agent-client-protocol = "=3.3.0"

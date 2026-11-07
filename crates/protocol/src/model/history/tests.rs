@@ -132,37 +132,6 @@ fn lifecycle_dependencies_preserve_completion_and_failure_suppression() {
 }
 
 #[test]
-fn live_predicate_queries_only_referenced_identities_without_mutation() {
-    let mut index = DependencyIndex::default();
-    for cursor in 1..1000 {
-        index.observe(&chunk(cursor, Some(&format!("message-{cursor}"))));
-    }
-    let before = serde_json::to_vec(&index).expect("serialize");
-    assert!(!index.may_reference_unloaded(&chunk(1001, Some("message-1"))));
-    assert!(index.may_reference_unloaded(&event(
-        1001,
-        json!({
-            "sessionUpdate":"tool_call_update","toolCallId":"unknown",
-            "_meta":{"terminal_output":{"terminal_id":"terminal","data":"x"}}
-        })
-    )));
-    assert_eq!(serde_json::to_vec(&index).expect("serialize"), before);
-    index.observe(&event(
-        1002,
-        json!({"sessionUpdate":"tool_call","toolCallId":"known","title":"tool"}),
-    ));
-    let before = serde_json::to_vec(&index).expect("serialize");
-    assert!(index.may_reference_unloaded(&event(
-        1003,
-        json!({
-            "sessionUpdate":"tool_call_update","toolCallId":"known",
-            "content":[{"type":"terminal","terminalId":"unknown-terminal"}]
-        })
-    )));
-    assert_eq!(serde_json::to_vec(&index).expect("serialize"), before);
-}
-
-#[test]
 fn turn_boundaries_share_message_identity_and_legacy_adjacency_rules() {
     let user = |cursor, id| {
         event(

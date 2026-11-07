@@ -12,7 +12,7 @@ help:
 		'make install              Install bas and bast into your Nix profile' \
 		'make install-bas          Install bas and bast' \
 		'make install-bas-service  Install bas and enable/restart its systemd user service' \
-		'make install-acp-test-agent  Build, test and install the standalone ACP test agent' \
+		'make install-acp-test-agent  Build, test and install the ACP test agent' \
 		'' \
 		'Pass Nix options with NIX_PROFILE_OPTIONS, e.g. NIX_PROFILE_OPTIONS="--profile /path/to/profile -L"'
 

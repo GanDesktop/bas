@@ -7,21 +7,9 @@
 }:
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "bas";
-  version = (builtins.fromTOML (builtins.readFile ../Cargo.toml)).package.version;
+  version = (builtins.fromTOML (builtins.readFile ../Cargo.toml)).workspace.package.version;
 
-  src = lib.fileset.toSource {
-    root = ../.;
-    fileset = lib.fileset.unions [
-      ../Cargo.toml
-      ../Cargo.lock
-      ../build.rs
-      ../build_metadata.rs
-      ../build_metadata
-      ../src
-      ../crates
-      ../tests
-    ];
-  };
+  src = import ./source.nix { inherit lib; };
   # Content identity survives source snapshots without .git and includes local edits.
   BAS_BUILD_TAG =
     if buildTag != null then
@@ -29,7 +17,16 @@ rustPlatform.buildRustPackage (finalAttrs: {
     else
       "nix-source-${builtins.substring 0 32 (builtins.baseNameOf finalAttrs.src)}";
   cargoLock.lockFile = ../Cargo.lock;
-  cargoTestFlags = [ "--workspace" "--all-targets" ];
+  cargoBuildFlags = [
+    "-p"
+    "bas"
+    "-p"
+    "bast"
+  ];
+  cargoTestFlags = [
+    "--workspace"
+    "--all-targets"
+  ];
   nativeBuildInputs = [ makeWrapper ];
   postInstall = ''
     wrapProgram "$out/bin/bas" \

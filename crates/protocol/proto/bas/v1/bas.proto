@@ -194,13 +194,26 @@ message DeleteAgentSessionRequest {
 
 message ListAgentCatalogRequest { bool refresh = 1; }
 message ListAgentCatalogResponse {
-  // Serialized bas::management::Catalog.
+  // Serialized bas_protocol::management::Catalog.
   bytes catalog_json = 1;
 }
 message InstallAgentRequest { string id = 1; }
 message AgentOperation {
-  string phase = 1;
-  string message = 2;
+  enum Phase {
+    PHASE_UNSPECIFIED = 0;
+    PHASE_RESOLVING = 1;
+    PHASE_DOWNLOADING = 2;
+    PHASE_EXTRACTING = 3;
+    PHASE_RUNTIME = 4;
+    PHASE_INSTALLING = 5;
+    PHASE_REGISTERING = 6;
+    PHASE_COMPLETE = 7;
+  }
+  // Former string phase and display message fields.
+  reserved 1, 2;
+  reserved "message";
+  // Clients own display text. Unknown values are treated as unspecified.
+  Phase phase = 5;
   // Saved AgentSpec, present only after registration succeeds.
   bytes spec_json = 3;
   bool complete = 4;
@@ -260,7 +273,7 @@ message AuthenticationEvent {
     CheckAgentResponse check = 1;
     PendingElicitation elicitation = 2;
     AcpPayload elicitation_complete = 3;
-    // Serialized bas::authentication::Invocation, prepared by the daemon.
+    // Serialized bas_protocol::authentication::Invocation, prepared by the daemon.
     TerminalInvocation terminal = 4;
     string progress = 5;
     // Agent cancelled this live elicitation/create request.

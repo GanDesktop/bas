@@ -1,0 +1,52 @@
+[package]
+name = "bas"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "BAS daemon"
+build = "../../scripts/build.rs"
+
+[dependencies]
+bas-protocol = { workspace = true, features = ["server", "workspace-schema"] }
+bas-server.workspace = true
+bas-config.workspace = true
+agent-client-protocol = { workspace = true, features = ["process", "schemars", "unstable", "unstable_protocol_v2"] }
+anyhow = "1"
+async-trait = "0.1"
+clap = { version = "4", features = ["derive", "env"] }
+dirs = "6"
+futures = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "json", "stream"] }
+regex = "1"
+sha2 = "0.10"
+tar = "0.4"
+flate2 = "1"
+bzip2 = "0.6"
+zip = { version = "4", default-features = false, features = ["deflate"] }
+semver = "1"
+tempfile = "3"
+prost = "0.14"
+toasty = { version = "=0.11.0", default-features = false, features = ["sqlite", "migration"] }
+toasty-driver-sqlite = "=0.11.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = { version = "2" }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tonic = { version = "0.14", features = ["tls-ring", "gzip"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["serde", "v4", "v7"] }
+which = "8"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["fs", "poll", "process", "signal", "term", "user"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sd-notify = "0.5"
+tracing-journald = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "job-object", "kill-on-drop"] }

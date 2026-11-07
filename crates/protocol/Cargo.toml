@@ -1,11 +1,11 @@
 [package]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 name = "bas-protocol"
-version = "0.1.0"
-edition = "2024"
 description = "Shared BAS models, wire protocol and authenticated transport primitives"
-repository = "https://github.com/GanDesktop/bas"
-license = "MIT"
-publish = false
 
 [features]
 default = []
@@ -42,9 +42,6 @@ tower = { version = "0.5", features = ["util"], optional = true }
 [build-dependencies]
 protoc-bin-vendored = "3"
 tonic-prost-build = "0.14"
-
-[dev-dependencies]
-tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["fs", "poll", "process", "signal", "term", "user"], optional = true }

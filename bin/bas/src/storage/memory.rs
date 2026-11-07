@@ -1,0 +1,430 @@
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    num::NonZeroUsize,
+    sync::Mutex,
+};
+
+use bas_protocol::{
+    model::{
+        AgentId, Cursor, Event, EventKind, SessionId, SessionMeta, TurnId, Workspace, WorkspaceId,
+        history::{Dependency, DependencyIndex, append_prompt_preview},
+    },
+    protocol::{HistoryOverview, HistoryOverviewEntry},
+};
+use futures::future::BoxFuture;
+
+use super::{
+    Error, Location, Page, PromptAcceptance, ResumeData, Storage, StoredSession, Window,
+    check_location, check_page, check_window, validate_acceptance, validate_commit,
+    validate_create,
+};
+
+#[path = "memory/window.rs"]
+mod window;
+
+struct Entry {
+    session: StoredSession,
+    events: VecDeque<Event>,
+    evicted_through: Cursor,
+    acceptances: HashMap<TurnId, PromptAcceptance>,
+    index: DependencyIndex,
+    dependencies: VecDeque<Dependency>,
+    context: HashMap<String, Context>,
+    context_overflow: bool,
+    pages: BTreeSet<Cursor>,
+    prompts: BTreeMap<Cursor, HistoryOverviewEntry>,
+}
+
+#[derive(Clone)]
+struct Context {
+    first: Cursor,
+    last: Cursor,
+}
+
+/// In-process storage retaining at most `capacity` events per session.
+/// Acceptance receipts survive event eviction until session deletion: memory grows
+/// by one hash/receipt and map entry per accepted prompt, never by its payload.
+pub struct Memory {
+    workspaces: Mutex<BTreeMap<WorkspaceId, Workspace>>,
+    capacity: NonZeroUsize,
+    sessions: Mutex<HashMap<SessionId, Entry>>,
+    last_used_agent: Mutex<Option<AgentId>>,
+}
+
+impl Memory {
+    #[must_use]
+    pub fn new(capacity: NonZeroUsize) -> Self {
+        Self {
+            workspaces: Mutex::new(BTreeMap::new()),
+            capacity,
+            sessions: Mutex::new(HashMap::new()),
+            last_used_agent: Mutex::new(None),
+        }
+    }
+}
+
+impl Storage for Memory {
+    fn workspaces(&self) -> BoxFuture<'_, Result<Vec<Workspace>, Error>> {
+        Box::pin(async {
+            Ok(self
+                .workspaces
+                .lock()
+                .expect("workspace storage lock")
+                .values()
+                .cloned()
+                .collect())
+        })
+    }
+    fn save_workspace(&self, workspace: Workspace) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            self.workspaces
+                .lock()
+                .expect("workspace storage lock")
+                .insert(workspace.id, workspace);
+            Ok(())
+        })
+    }
+    fn delete_workspace(&self, id: WorkspaceId) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            self.workspaces
+                .lock()
+                .expect("workspace storage lock")
+                .remove(&id);
+            Ok(())
+        })
+    }
+
+    fn record_created_session(&self, id: SessionId) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            let sessions = self.sessions.lock().expect("storage lock is not poisoned");
+            let entry = sessions.get(&id).ok_or(Error::NotFound(id))?;
+            if super::has_acp_resume(&entry.session) {
+                *self
+                    .last_used_agent
+                    .lock()
+                    .expect("storage lock is not poisoned") =
+                    Some(entry.session.meta.agent.clone());
+            }
+            Ok(())
+        })
+    }
+
+    fn last_used_agent(&self) -> BoxFuture<'_, Result<Option<AgentId>, Error>> {
+        Box::pin(async move {
+            Ok(self
+                .last_used_agent
+                .lock()
+                .expect("storage lock is not poisoned")
+                .clone())
+        })
+    }
+
+    fn create(
+        &self,
+        meta: SessionMeta,
+        resume: Option<ResumeData>,
+    ) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            validate_create(&meta)?;
+            let mut sessions = self.sessions.lock().expect("storage lock is not poisoned");
+            if sessions.contains_key(&meta.id) {
+                return Err(Error::AlreadyExists(meta.id));
+            }
+            sessions.insert(
+                meta.id,
+                Entry {
+                    session: StoredSession { meta, resume },
+                    events: VecDeque::new(),
+                    evicted_through: Cursor::START,
+                    acceptances: HashMap::new(),
+                    index: DependencyIndex::default(),
+                    dependencies: VecDeque::new(),
+                    context: HashMap::new(),
+                    context_overflow: false,
+                    pages: BTreeSet::new(),
+                    prompts: BTreeMap::new(),
+                },
+            );
+            Ok(())
+        })
+    }
+
+    fn commit<'a>(
+        &'a self,
+        meta: SessionMeta,
+        events: &'a [Event],
+        acceptance: Option<PromptAcceptance>,
+    ) -> BoxFuture<'a, Result<(), Error>> {
+        Box::pin(async move {
+            let mut sessions = self.sessions.lock().expect("storage lock is not poisoned");
+            let entry = sessions.get_mut(&meta.id).ok_or(Error::NotFound(meta.id))?;
+            if let Some(acceptance) = acceptance {
+                if entry.acceptances.contains_key(&acceptance.receipt.turn) {
+                    return Err(Error::SubmissionExists(acceptance.receipt.turn));
+                }
+                validate_acceptance(events, acceptance)?;
+            }
+            validate_commit(&entry.session.meta, &meta, events)?;
+            let selected = (acceptance.is_some() && super::has_acp_resume(&entry.session))
+                .then(|| meta.agent.clone());
+            for event in events {
+                let dependency = entry.index.observe(event);
+                if dependency.segment_start == event.cursor {
+                    entry.pages.insert(dependency.segment_start);
+                }
+                if dependency.starts_prompt {
+                    entry.prompts.insert(
+                        event.cursor,
+                        HistoryOverviewEntry {
+                            cursor: event.cursor.raw(),
+                            timestamp_millis: i64::try_from(event.at.millis()).unwrap_or(i64::MAX),
+                            preview: String::new(),
+                        },
+                    );
+                }
+                if matches!(
+                    event.kind,
+                    EventKind::Acp(bas_protocol::acp::SessionUpdate::UserMessageChunk(_))
+                ) && let Some(page) = entry.pages.range(..=dependency.floor).next_back()
+                    && let Some(prompt) = entry.prompts.get_mut(page)
+                {
+                    append_prompt_preview(&mut prompt.preview, event);
+                }
+                if entry.events.len() == self.capacity.get() {
+                    let dependency = entry
+                        .dependencies
+                        .pop_front()
+                        .expect("parallel dependency queue");
+                    if let Some(key) = dependency.context_key {
+                        match dependency.context_start {
+                            Some(first)
+                                if entry.context.len() < self.capacity.get()
+                                    || entry.context.contains_key(&key) =>
+                            {
+                                entry.context.insert(
+                                    key,
+                                    Context {
+                                        first,
+                                        last: entry.events.front().expect("full queue").cursor,
+                                    },
+                                );
+                            }
+                            Some(_) => entry.context_overflow = true,
+                            None => {
+                                entry.context.remove(&key);
+                            }
+                        }
+                    }
+                    entry.evicted_through = entry
+                        .events
+                        .pop_front()
+                        .expect("a full event window is nonempty")
+                        .cursor;
+                    entry.index.evict_through(entry.evicted_through);
+                    while entry
+                        .pages
+                        .first()
+                        .is_some_and(|cursor| *cursor <= entry.evicted_through)
+                    {
+                        entry.pages.pop_first();
+                    }
+                    while entry
+                        .prompts
+                        .first_key_value()
+                        .is_some_and(|(cursor, _)| *cursor <= entry.evicted_through)
+                    {
+                        entry.prompts.pop_first();
+                    }
+                }
+                entry.events.push_back(event.clone());
+                entry.dependencies.push_back(dependency);
+            }
+            entry.session.meta = meta;
+            if let Some(acceptance) = acceptance {
+                entry
+                    .acceptances
+                    .insert(acceptance.receipt.turn, acceptance);
+            }
+            if let Some(agent) = selected {
+                *self
+                    .last_used_agent
+                    .lock()
+                    .expect("storage lock is not poisoned") = Some(agent);
+            }
+            Ok(())
+        })
+    }
+
+    fn acceptance(
+        &self,
+        session: SessionId,
+        turn: TurnId,
+    ) -> BoxFuture<'_, Result<Option<PromptAcceptance>, Error>> {
+        Box::pin(async move {
+            let sessions = self.sessions.lock().expect("storage lock is not poisoned");
+            let entry = sessions.get(&session).ok_or(Error::NotFound(session))?;
+            Ok(entry.acceptances.get(&turn).copied())
+        })
+    }
+
+    fn save_resume(
+        &self,
+        id: SessionId,
+        resume: Option<ResumeData>,
+    ) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            self.sessions
+                .lock()
+                .expect("storage lock is not poisoned")
+                .get_mut(&id)
+                .ok_or(Error::NotFound(id))?
+                .session
+                .resume = resume;
+            Ok(())
+        })
+    }
+
+    fn load(&self, id: SessionId) -> BoxFuture<'_, Result<Option<StoredSession>, Error>> {
+        Box::pin(async move {
+            Ok(self
+                .sessions
+                .lock()
+                .expect("storage lock is not poisoned")
+                .get(&id)
+                .map(|entry| entry.session.clone()))
+        })
+    }
+
+    fn list(&self) -> BoxFuture<'_, Result<Vec<SessionMeta>, Error>> {
+        Box::pin(async move {
+            let mut metas: Vec<_> = self
+                .sessions
+                .lock()
+                .expect("storage lock is not poisoned")
+                .values()
+                .map(|entry| entry.session.meta.clone())
+                .collect();
+            metas.sort_by(|a, b| {
+                b.updated_at
+                    .cmp(&a.updated_at)
+                    .then_with(|| b.id.cmp(&a.id))
+            });
+            Ok(metas)
+        })
+    }
+
+    fn page(
+        &self,
+        id: SessionId,
+        after: Option<Cursor>,
+        limit: usize,
+    ) -> BoxFuture<'_, Result<Page, Error>> {
+        Box::pin(async move {
+            let sessions = self.sessions.lock().expect("storage lock is not poisoned");
+            let entry = sessions.get(&id).ok_or(Error::NotFound(id))?;
+            check_page(after, limit, entry.session.meta.revision)?;
+            if let Some(requested) = after
+                && requested < entry.evicted_through
+            {
+                return Err(Error::Expired {
+                    requested,
+                    evicted_through: entry.evicted_through,
+                });
+            }
+            let mut iter = entry
+                .events
+                .iter()
+                .filter(|event| after.is_none_or(|cursor| event.cursor > cursor));
+            let events: Vec<_> = iter.by_ref().take(limit).cloned().collect();
+            let next = iter
+                .next()
+                .and_then(|_| events.last().map(|event| event.cursor));
+            Ok(Page { events, next })
+        })
+    }
+
+    fn window(
+        &self,
+        id: SessionId,
+        before: Option<Cursor>,
+        limit: usize,
+    ) -> BoxFuture<'_, Result<Window, Error>> {
+        Box::pin(async move {
+            let sessions = self.sessions.lock().expect("storage lock is not poisoned");
+            let entry = sessions.get(&id).ok_or(Error::NotFound(id))?;
+            entry.window(before, limit)
+        })
+    }
+
+    fn overview(&self, id: SessionId) -> BoxFuture<'_, Result<HistoryOverview, Error>> {
+        Box::pin(async move {
+            let sessions = self.sessions.lock().expect("storage lock is not poisoned");
+            let entry = sessions.get(&id).ok_or(Error::NotFound(id))?;
+            if entry.evicted_through != Cursor::START {
+                return Err(Error::Expired {
+                    requested: Cursor::START,
+                    evicted_through: entry.evicted_through,
+                });
+            }
+            Ok(HistoryOverview {
+                session: id,
+                cursor: entry.session.meta.revision.raw(),
+                entries: entry.prompts.values().cloned().collect(),
+            })
+        })
+    }
+
+    fn window_at(&self, id: SessionId, cursor: Cursor) -> BoxFuture<'_, Result<Location, Error>> {
+        Box::pin(async move {
+            let sessions = self.sessions.lock().expect("storage lock is not poisoned");
+            let entry = sessions.get(&id).ok_or(Error::NotFound(id))?;
+            check_location(cursor, entry.session.meta.revision)?;
+            if cursor <= entry.evicted_through {
+                return Err(Error::Expired {
+                    requested: cursor,
+                    evicted_through: entry.evicted_through,
+                });
+            }
+            let after = entry
+                .pages
+                .range((
+                    std::ops::Bound::Excluded(cursor),
+                    std::ops::Bound::Unbounded,
+                ))
+                .next()
+                .copied();
+            Ok(Location {
+                window: entry.window(after, 1)?,
+                after,
+            })
+        })
+    }
+
+    fn tail(&self, id: SessionId, count: usize) -> BoxFuture<'_, Result<Vec<Event>, Error>> {
+        Box::pin(async move {
+            let sessions = self.sessions.lock().expect("storage lock is not poisoned");
+            let entry = sessions.get(&id).ok_or(Error::NotFound(id))?;
+            Ok(entry
+                .events
+                .iter()
+                .skip(entry.events.len().saturating_sub(count))
+                .cloned()
+                .collect())
+        })
+    }
+
+    fn delete(&self, id: SessionId) -> BoxFuture<'_, Result<bool, Error>> {
+        Box::pin(async move {
+            Ok(self
+                .sessions
+                .lock()
+                .expect("storage lock is not poisoned")
+                .remove(&id)
+                .is_some())
+        })
+    }
+
+    fn is_persistent(&self) -> bool {
+        false
+    }
+}

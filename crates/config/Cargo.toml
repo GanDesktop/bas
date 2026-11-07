@@ -1,0 +1,15 @@
+[package]
+name = "bas-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "BAS configuration loading and persistence"
+
+[dependencies]
+bas-protocol.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = { version = "2" }

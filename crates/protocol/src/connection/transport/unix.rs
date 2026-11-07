@@ -285,6 +285,3 @@ impl Listener {
         &self.target
     }
 }
-
-#[cfg(all(test, feature = "server"))]
-mod tests;

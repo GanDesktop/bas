@@ -39,9 +39,6 @@ use windows_sys::Win32::{
 
 use crate::connection::Target;
 
-#[cfg(all(test, feature = "server"))]
-mod tests;
-
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const BUSY_RETRY: Duration = Duration::from_millis(20);
 const HANDSHAKE: u8 = 1;

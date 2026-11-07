@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BAS 服务端架构</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; color: #17212b; background: #fff; font-family: system-ui, "Noto Sans CJK SC", sans-serif; }
+    main { max-width: 1120px; margin: auto; }
+    h1 { margin: 0 0 12px; font-size: 24px; }
+    .diagram { overflow-x: auto; }
+    svg { display: block; width: 100%; min-width: 760px; height: auto; }
+    svg text { fill: #17212b; text-anchor: middle; font-size: 16px; }
+    .boundary { fill: #f6f8fa; stroke: #a8b3be; stroke-width: 1.5; }
+    .box { fill: #fff; stroke: #678091; stroke-width: 1.5; }
+    .core { fill: #eaf4ff; stroke: #3675aa; stroke-width: 1.5; }
+    .title { font-size: 19px; font-weight: 650; }
+    .small { font-size: 14px; fill: #4b5b69; }
+    .edge { fill: none; stroke: #526978; stroke-width: 1.5; marker-start: url(#arrow); marker-end: url(#arrow); }
+    p { margin: 12px 0 0; font-size: 14px; line-height: 1.6; }
+    @media print { body { padding: 0; } svg { min-width: 0; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>BAS 服务端架构</h1>
+  <div class="diagram">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 780" role="img" aria-labelledby="diagram-title diagram-description">
+      <title id="diagram-title">客户端、BAS Server 与外部 Agent</title>
+      <desc id="diagram-description">客户端通过 BAS gRPC 管理工作区和会话，通过 ACP 服务端接口进行对话。BAS 拥有会话、执行、历史与交互协调，通过另一条独立 ACP 连接接入外部 Agent。外部 Agent 将 BAS 视为 ACP 客户端。</desc>
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#526978"/>
+        </marker>
+      </defs>
+
+      <rect class="boundary" x="240" y="10" width="640" height="86" rx="8"/>
+      <text class="title" x="560" y="42">客户端：CLI / 桌面应用 / 其他前端</text>
+      <text x="560" y="70">看到 BAS 的工作区与会话</text>
+
+      <rect class="boundary" x="20" y="177" width="1080" height="430" rx="8"/>
+      <text class="title" x="560" y="210">BAS Server · 拥有会话与执行生命周期</text>
+
+      <path class="edge" d="M 330 96 V 242"/>
+      <text x="330" y="128">BAS gRPC</text>
+      <text class="small" x="330" y="151">管理、查询、观察、交互回答</text>
+      <path class="edge" d="M 790 96 V 242"/>
+      <text x="790" y="128">ACP</text>
+      <text class="small" x="790" y="151">请求、更新、交互回调</text>
+
+      <rect class="box" x="130" y="242" width="400" height="82" rx="6"/>
+      <text class="title" x="330" y="272">BAS 管理接口</text>
+      <text class="small" x="330" y="299">工作区 · 会话生命周期 · 历史 · Agent 配置与安装</text>
+      <rect class="box" x="590" y="242" width="400" height="82" rx="6"/>
+      <text class="title" x="790" y="272">ACP 服务端接口</text>
+      <text class="small" x="790" y="299">加载已有会话 · prompt / cancel · 更新与回调</text>
+
+      <path class="edge" d="M 330 324 V 346 H 480 V 370"/>
+      <path class="edge" d="M 790 324 V 346 H 640 V 370"/>
+      <rect class="core" x="410" y="370" width="300" height="90" rx="6"/>
+      <text class="title" x="560" y="402">BAS 会话</text>
+      <text class="small" x="560" y="430">稳定的会话身份、提交身份与执行</text>
+
+      <path class="edge" d="M 320 415 H 410"/>
+      <rect class="box" x="70" y="370" width="250" height="90" rx="6"/>
+      <text class="title" x="195" y="402">状态与历史</text>
+      <text class="small" x="195" y="430">持久化 · 恢复 · 回放</text>
+
+      <path class="edge" d="M 710 415 H 800"/>
+      <rect class="box" x="800" y="370" width="250" height="90" rx="6"/>
+      <text class="title" x="925" y="402">交互协调</text>
+      <text class="small" x="925" y="430">权限 · elicitation · 回答</text>
+
+      <path class="edge" d="M 560 460 V 502"/>
+      <rect class="box" x="330" y="502" width="460" height="80" rx="6"/>
+      <text class="title" x="560" y="532">Agent 接入 · ACP 客户端</text>
+      <text class="small" x="560" y="558">启动 / 连接 / 恢复 · 映射 BAS 与 Agent 的会话身份</text>
+
+      <path class="edge" d="M 560 582 V 685"/>
+      <text x="748" y="635">独立的 ACP 连接</text>
+      <text class="small" x="748" y="658">请求、更新、权限与 elicitation</text>
+
+      <rect class="boundary" x="240" y="685" width="640" height="85" rx="8"/>
+      <text class="title" x="560" y="716">外部 Agent：BAS 是它的 ACP 客户端</text>
+      <text x="560" y="745">Agent 自己的会话 · 模型调用 · 工具执行</text>
+    </svg>
+  </div>
+  <p>两条 ACP 连接独立。客户端断线不终止 BAS 已受理的执行。</p>
+</main>
+</body>
+</html>

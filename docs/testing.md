@@ -1,35 +1,26 @@
-# 测试环境
-
-Nix 依赖由 `flake.lock` 固定，Rust 依赖由 `Cargo.lock` 固定。
-
-## Rust 测试
+# 验证
 
 ```sh
-nix develop -c cargo fmt --all -- --check
-nix develop -c cargo test -p bas-protocol --no-default-features --locked
-nix develop -c cargo test -p bas-client --locked
-nix develop -c cargo test -p bas-server --locked
-nix develop -c cargo test --workspace --all-targets --locked
-nix develop -c cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo fmt --all -- --check
+cargo build --workspace --bins --locked
+cargo test --workspace --all-targets --locked -- --nocapture
+cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-覆盖共享模型、配置、会话存储、ACP 后端、终端输出、gRPC、进程生命周期和本地传输。
-测试使用 embedded echo 与受控 ACP fixture，不读取凭据或调用真实模型。
-CI 也在 macOS 和 Windows 检查原生服务、传输和后端安装生命周期。
+主端到端测试位于 `bin/bast/tests/e2e/`，启动真实 `bas` 和 `bast`，使用内置 echo 后端、真实 IPC/TCP/mTLS 和 SQLite。
+先构建 workspace 二进制；测试从 `bast` 同一产物目录启动 `bas`。
+每个场景使用独立配置、工作区和数据库；按就绪日志、协议事件或进程退出同步，超时只用于失败截止。
 
-## 安装与源码快照
+覆盖会话断线与恢复、提交去重、配置冲突、工作区生命周期、ACP 网关作用域、传输认证，以及 Unix 上的进程崩溃和存储故障恢复。
+外部模型、Agent 原生登录、下载安装及系统服务安装不在这些自动场景中。
+
+每次运行保留 `target/e2e/<场景>-<随机标识>/`，包含启动命令、日志、CLI 输出、请求结果、配置和 SQLite 数据库。
+失败和成功都保留工件，测试输出打印路径；CI 上传这些目录。`build.txt` 的含义见[构建标识](build-tags.md)。可用相同测试命令和场景过滤器复现，例如：
 
 ```sh
-python3 tests/install_bas.py -v
-python3 tests/nix_source.py -v
+cargo test -p bast --test e2e sessions:: --locked -- --nocapture
 ```
 
-安装脚本测试使用临时目录与模拟 Nix；源码快照测试需要真实 Nix，检查锁定 URI 往返和过滤规则。
-这些测试不安装软件或操作真实服务。
-
-## 系统测试
-
-QEMU/NixOS 系统测试目前不在仓库中。系统级覆盖由 Rust 进程集成测试和真实 gRPC 测试承担。
-
-Windows CI 额外运行 `cargo test --bin bast command::agents::terminal --locked`，
-通过隔离 console 子进程检查取消后再次输入、Unicode、进度输出与控制台模式恢复。
+演示 Agent 的协议测试位于 `bin/acp-test-agent/tests/`，工件同样写入 `target/e2e/`。
+单元测试仅覆盖历史依赖计算、表单约束、分页字节边界和压缩块异常，位于对应模块的 `tests.rs`。
+新增测试遵循 [agents.md](../agents.md#组织测试)。

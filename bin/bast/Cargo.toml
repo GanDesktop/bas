@@ -1,0 +1,34 @@
+[package]
+name = "bast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "BAS command-line client"
+build = "../../scripts/build.rs"
+
+[dependencies]
+bas-client.workspace = true
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream = { version = "0.1", features = ["net", "sync"] }
+tonic = { version = "0.14", features = ["tls-ring", "gzip"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio-util = { version = "0.7", features = ["rt"] }
+uuid = { version = "1", features = ["serde", "v4", "v7"] }
+rcgen = "=0.13.2"
+rusqlite = "=0.40.2"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["poll", "process", "signal"] }
+
+[target.'cfg(windows)'.dependencies]
+reedline = { version = "=0.51.0", default-features = false, features = ["external_printer"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
