@@ -1,3 +1,11 @@
+## 个性
+请你在写代码的时候，能够有整体性的审美，确保项目整体向一个好的方向发展，而不是为了单次任务的通过增加了系统整体的复杂性，最后在整体上得到了更坏的结果。
+
+## 技术栈
+1. 图形界面使用[NSH](https://github.com/longbridge/nsh)
+2. **使用**[gds-uim](https://github.com/GanDesktop/gds-uim)这个库来组织ui，具体例子可以看这个库的docs文件夹和example。对于需要重复使用的组件，请以解剖的形式声明。可以参考公共组建库中的`ContentPage`。默认使用`Default::detault`来创建组件。请不要无视这一条！！！！！
+3. i18n 使用mozilla的fluent
+
 ## Rust 编码规范
 
 ### 代码组织
@@ -165,3 +173,9 @@ fn make_some_big_news(&self, target_id: &str, by: &str, content: &str, timestamp
 
 1. 合理利用命名空间，比如一个结构`Request`，已经在模块声明，如已经定义在`system`模块，那么如果它再叫`SystemRequest`可能就有一些冗余，应该直接使用`Request`。并且在使用的时候使用`system::Request`来引用它。但这并不总是成立，比如很多模型都会被统一从`model`模块导出，那么命名的时候加上具体的领域就是有意义的，因为调用方已经不能获得其所在的具体子模块了。
 2. 不要再结构体名称和字段中提供冗余的信息，除非是序列化需要，比如`ClientProfile`这样一个结构，就不要再用`client_name`来表示客户端名称了，应该直接用`name`。相反的，如果我们取出它作为独立的变量，可能在一些情况下，为了避免混淆，就要用`client_name`来表示客户端名称。
+
+## 项目额外的代码规范
+1. UI中，事件的handler尽量少写闭包，通过成员函数或者提前写好的闭包提供，提升代码可读性
+2. 在使用处导入 UIM 和翻译宏，使用 `el!`、`m!`、`tr!`，不写完整模块路径的宏调用。
+3. UIM 中元素 ID 使用 `# expression`，如 `# format!("audio-{id}")`；常量路径、变量和宏调用直接作为 DSL 值，不加多余的 `$()`。仅在需要 Rust 字段访问、方法链或运算等语义时使用 Rust 转义。
+4. UI 二进制采用 FSD：`app → pages → widgets → features → entities → shared`，只建立实际需要的层。业务差异集中在二级切片；`app` 负责启动、组装与生命周期，`shared/i18n` 提供翻译能力。跨切片只访问 `<slice>.rs` 的显式公开入口；同层切片不互相依赖，实体关系通过 `x/<consumer>`（Rust 对 FSD `@x` 的适配）明确暴露。`app` 和 `shared` 使用职责分段。具体边界和标准链接见 `docs/development.md`。

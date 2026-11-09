@@ -68,10 +68,12 @@ nix run .#acp-test-agent -- --help
 | 参数 | 默认值 | 作用 |
 | --- | --- | --- |
 | `--page-size <N>` | `2` | `session/list` 每页返回的会话数；用于验证分页 UI |
-| `--require-auth` | 关闭 | `session/new` 前必须先 `authenticate`（v1）或 `auth/login`（v2） |
+| `--require-auth` | 关闭 | 新建会话和发送提示前必须先 `authenticate`（v1）或 `auth/login`（v2） |
+| `--interactive-auth` | 关闭 | 登录时依次发出表单和 URL 授权请求，供客户端验证交互流程 |
+| `--auth-state <PATH>` | 无 | 将演示登录标记写到指定文件，跨进程保留状态；删除文件可模拟登录过期 |
 | `--protocol <both\|v1\|v2>` | `both` | 限制 Agent 提供的协议版本，用于验证客户端的降级/回退逻辑 |
 
-认证方法 id 为 `demo-login`。`--require-auth` 只拦截新建会话，不影响 `session/load`、
+认证方法 id 为 `demo-login`。登录标记仅供演示，不保存真实凭据。`--require-auth` 拦截新建会话和发送提示，不影响 `session/load`、
 `session/resume` 等已有会话操作。`--protocol v1` 时 v2-only 客户端会在 initialize 阶段
 失败；`--protocol v2` 则拒绝 v1-only 客户端，便于测试客户端的协议选择与回退路径。
 

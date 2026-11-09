@@ -62,6 +62,11 @@ pub const COMMANDS: &[commands::Descriptor] = &[
         hint: None,
     },
     commands::Descriptor {
+        name: "activity",
+        description: "Show grouped thoughts, long tool titles, failures, and a prose boundary",
+        hint: None,
+    },
+    commands::Descriptor {
         name: "plan",
         description: "Run a cancellable plan, or clear it",
         hint: Some("milliseconds between steps (default 5000), or clear"),
@@ -148,8 +153,12 @@ pub const COMMANDS: &[commands::Descriptor] = &[
 pub struct Options {
     /// Number of sessions returned per `session/list` page.
     pub page_size: usize,
-    /// Reject session creation until a client authenticates.
+    /// Reject session creation and prompts until a client authenticates.
     pub require_auth: bool,
+    /// Exercise request-scoped form and URL authentication.
+    pub interactive_auth: bool,
+    /// Optional marker for demonstrating persisted authentication.
+    pub auth_state: Option<std::path::PathBuf>,
     /// Offer the v1 protocol implementation.
     pub v1: bool,
     /// Offer the v2 protocol implementation.
@@ -161,6 +170,8 @@ impl Default for Options {
         Self {
             page_size: 2,
             require_auth: false,
+            interactive_auth: false,
+            auth_state: None,
             v1: true,
             v2: true,
         }
@@ -239,3 +250,6 @@ pub const SAMPLE_IMAGE_BASE64: &str =
 /// A short silent WAV payload used by the audio content demo.
 pub const SAMPLE_AUDIO_BASE64: &str =
     "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+
+/// Long, non-executed command label used by the activity rendering demo.
+pub const ACTIVITY_COMMAND: &str = "mkdir -p /workspace/project/exports && cp /workspace/project/generated/assets/very-long-output-file-name.png /workspace/project/exports/final-image.png";

@@ -17,7 +17,7 @@ exec nix eval --impure --raw --expr '
         cargoOutput = name == "target"
           && (parent == root || builtins.pathExists (parent + "/Cargo.toml"));
       in
-      !(builtins.elem name [ ".git" ".delta" ".direnv" ".test-results" "result" "node_modules" "__pycache__" ])
+      !(builtins.elem name [ ".git" ".nsh" ".delta" ".direnv" ".test-results" "result" "node_modules" "__pycache__" ])
       && !cargoOutput
       && builtins.match "[.]env([.].*)?" name == null;
   }

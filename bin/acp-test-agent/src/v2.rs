@@ -46,7 +46,10 @@ impl Demo {
     }
 
     pub(super) fn is_authenticated(&self) -> bool {
-        self.authenticated.load(Ordering::Acquire)
+        self.options.auth_state.as_ref().map_or_else(
+            || self.authenticated.load(Ordering::Acquire),
+            |path| path.is_file(),
+        )
     }
 
     pub(super) fn next_message_id(&self, prefix: &str) -> acp::MessageId {
@@ -104,10 +107,11 @@ impl Demo {
         )
     }
 
-    fn login(
+    async fn login(
         &self,
         request: acp::LoginAuthRequest,
         responder: Responder<acp::LoginAuthResponse>,
+        connection: V2ConnectionTo<Client>,
     ) -> Result<(), Error> {
         if request.method_id.0.as_ref() != AUTH_METHOD_ID {
             return responder.respond_with_error(Error::invalid_params().data(format!(
@@ -115,11 +119,58 @@ impl Demo {
                 request.method_id
             )));
         }
+        if self.options.interactive_auth {
+            let scope = acp::ElicitationRequestScope::new(responder.id().clone());
+            let schema = acp::ElicitationSchema::new().property(
+                "account",
+                acp::StringPropertySchema::new()
+                    .title("Demo account")
+                    .min_length(1),
+                true,
+            );
+            let answer = connection
+                .send_request(acp::CreateElicitationRequest::new(
+                    acp::ElicitationFormMode::new(scope.clone(), schema),
+                    "Sign in to the demo agent",
+                ))
+                .block_task()
+                .await?;
+            if !matches!(answer.action, acp::ElicitationAction::Accept(_)) {
+                return responder.respond_with_error(Error::auth_required());
+            }
+            let id = acp::ElicitationId::new("demo-auth-browser");
+            let answer = connection
+                .send_request(acp::CreateElicitationRequest::new(
+                    acp::ElicitationUrlMode::new(
+                        scope,
+                        id.clone(),
+                        "https://example.com/demo-sign-in",
+                    ),
+                    "Confirm demo browser authorization",
+                ))
+                .block_task()
+                .await?;
+            if !matches!(answer.action, acp::ElicitationAction::Accept(_)) {
+                return responder.respond_with_error(Error::auth_required());
+            }
+            connection.send_notification(acp::CompleteElicitationNotification::new(id))?;
+        }
+        if let Some(path) = &self.options.auth_state {
+            std::fs::write(path, b"demo-authenticated")
+                .map_err(|e| Error::internal_error().data(e.to_string()))?;
+        }
         self.authenticated.store(true, Ordering::Release);
         responder.respond(acp::LoginAuthResponse::new())
     }
 
     fn logout(&self, responder: Responder<acp::LogoutAuthResponse>) -> Result<(), Error> {
+        if let Some(path) = &self.options.auth_state {
+            match std::fs::remove_file(path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(Error::internal_error().data(e.to_string())),
+            }
+        }
         self.authenticated.store(false, Ordering::Release);
         responder.respond(acp::LogoutAuthResponse::new())
     }
@@ -157,8 +208,12 @@ pub fn component(options: Options) -> impl agent_client_protocol::ConnectTo<Clie
                 let demo = demo.clone();
                 async move |request: acp::LoginAuthRequest,
                             responder: Responder<acp::LoginAuthResponse>,
-                            _connection: V2ConnectionTo<Client>| {
-                    demo.login(request, responder)
+                            connection: V2ConnectionTo<Client>| {
+                    let worker = connection.clone();
+                    let demo = demo.clone();
+                    connection
+                        .spawn(async move { demo.login(request, responder, worker).await })?;
+                    Ok(())
                 }
             },
             agent_client_protocol::on_receive_request!(),

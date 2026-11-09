@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.gandesktop.bas">
+    <!-- The local Linux runtime requires executable files in private storage. APK sideload only. -->
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="28" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <application android:label="BAS" android:extractNativeLibs="true"
+        android:allowBackup="false" android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <meta-data android:name="com.longbridge.nsh.RUST" android:value="true" />
+        <provider android:name="com.longbridge.nsh.FilesProvider"
+            android:authorities="io.gandesktop.bas.files" android:exported="false"
+            android:grantUriPermissions="true" />
+        <service android:name="io.gandesktop.bas.runtime.LocalService" android:exported="false" />
+        <activity android:name="com.longbridge.nsh.AppActivity" android:exported="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

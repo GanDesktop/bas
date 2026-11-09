@@ -19,9 +19,17 @@ pub struct Cli {
     #[arg(long, default_value_t = 2)]
     pub page_size: usize,
 
-    /// Reject session creation until an authenticate/auth-login call succeeds.
+    /// Reject session creation and prompts until an authenticate/auth-login call succeeds.
     #[arg(long)]
     pub require_auth: bool,
+
+    /// Request a form and browser confirmation during sign-in.
+    #[arg(long)]
+    pub interactive_auth: bool,
+
+    /// Persist the demo login marker across agent processes (no real credentials).
+    #[arg(long)]
+    pub auth_state: Option<std::path::PathBuf>,
 
     /// Protocol versions offered during initialize negotiation.
     #[arg(long, value_enum, default_value_t = Protocol::Both)]
@@ -54,6 +62,8 @@ impl Cli {
         Options {
             page_size: self.page_size.max(1),
             require_auth: self.require_auth,
+            interactive_auth: self.interactive_auth,
+            auth_state: self.auth_state.clone(),
             v1,
             v2,
         }

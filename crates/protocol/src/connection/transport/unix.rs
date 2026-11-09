@@ -22,6 +22,9 @@ use crate::connection::Target;
 
 pub(super) type Stream = tokio::net::UnixStream;
 
+#[cfg(target_os = "android")]
+const ANDROID_SYSTEM_ID: u32 = 1000;
+
 const DIRECTORY_MODE: u32 = 0o700;
 const FILE_MODE: u32 = 0o600;
 
@@ -69,6 +72,17 @@ fn socket_path(target: &Target) -> io::Result<PathBuf> {
 fn validate_ancestors(path: &Path) -> io::Result<()> {
     for ancestor in path.ancestors() {
         let metadata = fs::symlink_metadata(ancestor)?;
+        // Android's /data hierarchy belongs to AID_SYSTEM; app directories may
+        // also be group-writable by the app's own unique GID. Neither grants
+        // access to another app. Keep rejecting symlinks and world-write access.
+        #[cfg(target_os = "android")]
+        if metadata.is_dir()
+            && (metadata.uid() == ANDROID_SYSTEM_ID || metadata.uid() == geteuid().as_raw())
+            && metadata.gid() == metadata.uid()
+            && metadata.mode() & 0o002 == 0
+        {
+            continue;
+        }
         // The namespace root is the trust anchor. Its owner can be unmapped
         // inside a user namespace; that exception must not apply to descendants.
         if !metadata.is_dir()

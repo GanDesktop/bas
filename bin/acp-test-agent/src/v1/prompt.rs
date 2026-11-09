@@ -45,6 +45,9 @@ pub(super) fn handle_prompt(
     request: acp::PromptRequest,
     responder: Responder<acp::PromptResponse>,
 ) -> Result<(), acp::Error> {
+    if let Err(error) = demo.require_authenticated() {
+        return responder.respond_with_error(error);
+    }
     let session_id = request.session_id.0.to_string();
     if let Err(error) = demo.store().begin_prompt(&session_id) {
         return responder.respond_with_error(acp::Error::invalid_params().data(error.to_string()));
@@ -95,6 +98,7 @@ async fn run_turn(
         Command::Rich => run_rich(demo, connection, session_id)?,
         Command::Thought => run_thought(demo, connection, session_id)?,
         Command::Tool => run_tool(demo, connection, session_id, &cwd)?,
+        Command::Activity => run_activity(demo, connection, session_id)?,
         Command::Plan { millis } => {
             run_plan(demo, connection, session_id, millis, cancellation).await?
         }
@@ -851,4 +855,69 @@ fn remove_plan(
         acp::SessionUpdate::Plan(acp::Plan::new(Vec::new()))
     };
     demo.send_update(connection, session_id, update)
+}
+
+fn run_activity(
+    demo: &Demo,
+    connection: &ConnectionTo<Client>,
+    session_id: &acp::SessionId,
+) -> Result<Turn, acp::Error> {
+    demo.send_thought_chunk(
+        connection,
+        session_id,
+        &demo.next_message_id("thought"),
+        "Checking the workspace before applying changes.",
+    )?;
+    demo.send_update(
+        connection,
+        session_id,
+        acp::SessionUpdate::ToolCall(
+            acp::ToolCall::new(demo.next_tool_id(), demo::ACTIVITY_COMMAND)
+                .status(acp::ToolCallStatus::Completed)
+                .raw_output(serde_json::json!({"saved":true})),
+        ),
+    )?;
+    demo.send_update(
+        connection,
+        session_id,
+        acp::SessionUpdate::ToolCall(
+            acp::ToolCall::new(demo.next_tool_id(), "Verify exported image")
+                .status(acp::ToolCallStatus::Failed)
+                .raw_output(serde_json::json!({"error":"Scripted verification failure"})),
+        ),
+    )?;
+    send_text(
+        demo,
+        connection,
+        session_id,
+        "The first activity group is complete.",
+    )?;
+    let image_tool_id = demo.next_tool_id();
+    demo.send_update(
+        connection,
+        session_id,
+        acp::SessionUpdate::ToolCall(
+            acp::ToolCall::new(
+                image_tool_id.clone(),
+                "Retry verification after the explanation",
+            )
+            .status(acp::ToolCallStatus::InProgress)
+            .content(vec![
+                acp::ContentBlock::Image(acp::ImageContent::new(SAMPLE_IMAGE_BASE64, "image/png"))
+                    .into(),
+                acp::ToolCallContent::Terminal(acp::Terminal::new("image-verification")),
+            ])
+            .meta(serde_json::json!({"terminal_output":{"terminal_id":"image-verification","data":"\u{1b}[32mImage loaded\u{1b}[0m\nprogress: 1"}}).as_object().cloned())
+            .raw_output(serde_json::json!({"result": SAMPLE_IMAGE_BASE64})),
+        ),
+    )?;
+    demo.send_update(connection, session_id, acp::SessionUpdate::ToolCallUpdate(
+        acp::ToolCallUpdate::new(image_tool_id, acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::Completed))
+            .meta(serde_json::json!({
+                "terminal_output":{"terminal_id":"image-verification","data":"\rprogress: 2\nImage verification complete"},
+                "terminal_exit":{"terminal_id":"image-verification","exit_code":0}
+            }).as_object().cloned())
+    ))?;
+    send_text(demo, connection, session_id, "Activity demo complete.")?;
+    Ok(Turn::end_turn())
 }

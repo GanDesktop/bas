@@ -16,7 +16,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
       buildTag
     else
       "nix-source-${builtins.substring 0 32 (builtins.baseNameOf finalAttrs.src)}";
-  cargoLock.lockFile = ../Cargo.lock;
+  cargoLock = import ./cargo-lock.nix;
   cargoBuildFlags = [
     "-p"
     "bas"

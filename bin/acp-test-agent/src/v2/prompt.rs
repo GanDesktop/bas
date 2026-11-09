@@ -25,6 +25,9 @@ pub(super) fn handle_prompt(
     request: acp::PromptRequest,
     responder: Responder<acp::PromptResponse>,
 ) -> Result<(), Error> {
+    if let Err(error) = demo.require_authenticated() {
+        return responder.respond_with_error(error);
+    }
     let session_id = request.session_id.clone();
     if let Err(error) = demo.store().begin_prompt(session_id.0.as_ref()) {
         return responder.respond_with_error(Error::invalid_params().data(error.to_string()));
@@ -98,6 +101,10 @@ async fn run_turn(
         }
         Command::Thought => {
             run_thought(demo, connection, session_id)?;
+            acp::StopReason::EndTurn
+        }
+        Command::Activity => {
+            run_activity(demo, connection, session_id)?;
             acp::StopReason::EndTurn
         }
         Command::Tool => {
@@ -747,4 +754,61 @@ async fn wait_cancellable(demo: &Demo, session_id: &acp::SessionId, millis: u64)
         let remaining = deadline.saturating_duration_since(now);
         tokio::time::sleep(remaining.min(Duration::from_millis(50))).await;
     }
+}
+
+fn run_activity(
+    demo: &Demo,
+    connection: &V2ConnectionTo<Client>,
+    session_id: &acp::SessionId,
+) -> Result<(), Error> {
+    demo.send_update(
+        connection,
+        session_id,
+        acp::SessionUpdate::AgentThoughtChunk(acp::ContentChunk::new(
+            "Checking the workspace before applying changes.".into(),
+            demo.next_message_id("thought"),
+        )),
+    )?;
+    demo.send_update(
+        connection,
+        session_id,
+        acp::SessionUpdate::ToolCallUpdate(
+            acp::ToolCallUpdate::new(demo.next_tool_id())
+                .title(demo::ACTIVITY_COMMAND)
+                .status(acp::ToolCallStatus::Completed),
+        ),
+    )?;
+    demo.send_update(
+        connection,
+        session_id,
+        acp::SessionUpdate::ToolCallUpdate(
+            acp::ToolCallUpdate::new(demo.next_tool_id())
+                .title("Verify exported image")
+                .status(acp::ToolCallStatus::Failed),
+        ),
+    )?;
+    send_text(
+        demo,
+        connection,
+        session_id,
+        "The first activity group is complete.",
+    )?;
+    demo.send_update(
+        connection,
+        session_id,
+        acp::SessionUpdate::ToolCallUpdate(
+            acp::ToolCallUpdate::new(demo.next_tool_id())
+                .title("Retry verification after the explanation")
+                .status(acp::ToolCallStatus::Completed)
+                .content(vec![
+                    acp::ContentBlock::Image(acp::ImageContent::new(
+                        SAMPLE_IMAGE_BASE64,
+                        "image/png",
+                    ))
+                    .into(),
+                ]),
+        ),
+    )?;
+    send_text(demo, connection, session_id, "Activity demo complete.")?;
+    Ok(())
 }

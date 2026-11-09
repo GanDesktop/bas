@@ -4,7 +4,7 @@ rustPlatform.buildRustPackage {
   version = (builtins.fromTOML (builtins.readFile ../Cargo.toml)).workspace.package.version;
 
   src = import ./source.nix { inherit lib; };
-  cargoLock.lockFile = ../Cargo.lock;
+  cargoLock = import ./cargo-lock.nix;
   cargoBuildFlags = [
     "-p"
     "acp-test-agent"

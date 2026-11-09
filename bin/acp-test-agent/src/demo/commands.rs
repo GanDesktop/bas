@@ -27,6 +27,8 @@ pub enum Command {
     Thought,
     /// Publish and finish a tool call.
     Tool,
+    /// Publish adjacent thoughts and tools, separated from a later activity by prose.
+    Activity,
     /// Run an execution plan, waiting between steps.
     Plan { millis: u64 },
     /// Remove the demo plan.
@@ -140,6 +142,7 @@ pub fn parse(text: &str) -> Command {
         "rich" => Command::Rich,
         "thought" => Command::Thought,
         "tool" => Command::Tool,
+        "activity" => Command::Activity,
         "plan" if argument == "clear" => Command::ClearPlan,
         "plan" => match parse_millis(argument, DEFAULT_PLAN_MILLIS) {
             Ok(millis) => Command::Plan { millis },

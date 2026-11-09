@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${1:-}" in
+    package|package-local|run) action=$1; shift ;;
+    *) echo 'Usage: scripts/mobile-android {package|package-local|run} [nsh options...] (inside nix develop .#android)' >&2; exit 2 ;;
+esac
+
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$root"
+app="$root/bin/bas-mobile"
+sdk="${ANDROID_HOME:?Enter nix develop .#android first}"
+platform=$(jq -r '.android.targetSdk // 35' "$app/nsh.json")
+android_jar="$sdk/platforms/android-$platform/android.jar"
+build_tools=$(find -L "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+
+# Use the Java sources of the exact NSH revision linked into the Rust app.
+manifest=$(cargo metadata --locked --format-version 1 --filter-platform aarch64-linux-android |
+    jq -er '.packages[] | select(.name == "nsh-core") | .manifest_path')
+java_sources="$(dirname -- "$manifest")/../nsh-platform-android/java"
+runtime="$root/target/mobile-android/runtime"
+mkdir -p "$runtime"
+build=$(mktemp -d "$root/target/mobile-android/java.XXXXXX")
+trap 'rm -rf -- "$build"' EXIT
+mkdir -p "$build/classes" "$build/dex"
+mapfile -d '' sources < <(find "$java_sources" -name '*.java' ! -name AppActivity.java -print0)
+mapfile -d '' additions < <(find "$app/android" -name '*.java' -print0)
+"$JAVA_HOME/bin/javac" --release 17 -Xlint:-options -encoding UTF-8 \
+    -classpath "$android_jar" -d "$build/classes" "${sources[@]}" "${additions[@]}"
+"$JAVA_HOME/bin/jar" cf "$build/classes.jar" -C "$build/classes" .
+"$build_tools/d8" --min-api 28 --lib "$android_jar" --output "$build/dex" "$build/classes.jar"
+
+# NSH compiles each Rust library itself; these directories enumerate supported ABIs.
+for variant in release dev; do
+    mkdir -p "$runtime/android/$variant/lib/"{arm64-v8a,armeabi-v7a,x86_64}
+    cp "$build/dex/classes.dex" "$runtime/android/$variant/classes.dex"
+done
+if [[ "$action" == package-local ]]; then
+    # The local-service variant deliberately owns its manifest and signing step.
+    args=("$@")
+    abi=arm64-v8a
+    out=target/mobile-local/arm64-v8a
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --abi) abi=$2; shift 2 ;;
+            --out) out=$2; shift 2 ;;
+            *) echo "package-local accepts only --abi and --out" >&2; exit 2 ;;
+        esac
+    done
+    [[ -f "target/mobile-runtime/$abi/assets/bas-runtime/manifest.json" ]] || {
+        echo 'Build the runtime with scripts/package-mobile-local first' >&2; exit 1;
+    }
+    NSH_RUNTIME="$runtime" nsh package "$app" --target android "${args[@]}"
+    python3 scripts/mobile-runtime/package.py --apk "$out/BAS.apk" --abi "$abi" --sdk "$sdk" --tools "$build_tools"
+else
+    NSH_RUNTIME="$runtime" nsh "$action" "$app" --target android "$@"
+fi

@@ -1,0 +1,64 @@
+{
+  "arm64-v8a": {
+    "target": "aarch64-unknown-linux-gnu",
+    "ubuntu": {
+      "url": "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
+      "sha256": "a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2"
+    },
+    "packages": {
+      "libandroid-shmem": {
+        "version": "0.7",
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-shmem/libandroid-shmem_0.7_aarch64.deb",
+        "sha256": "0da3a24d558b93c92bcf8d611e0826a99ff96e396b148e6cdf33b47c47c57ff6"
+      },
+      "libtalloc": {
+        "version": "2.5.0",
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libt/libtalloc/libtalloc_2.5.0_aarch64.deb",
+        "sha256": "556591f43bb773ad8777e1a29522640866a55f95dab71914418b94a8c58ad5a7"
+      },
+      "proot": {
+        "version": "5.1.107.102",
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.1.107.102_aarch64.deb",
+        "sha256": "10a394b585c2fc2b2c8502544f4e5f1be581dc8bfff79e8ba62f16207423e030"
+      }
+    },
+    "guest_packages": {
+      "libatomic1": {
+        "version": "14.2.0-4ubuntu2~24.04.1",
+        "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_arm64.deb",
+        "sha256": "fdeab74e7ad8572cf69c7024e8040c7ac851f6e667d35f0d429e7a0352840f73"
+      }
+    }
+  },
+  "x86_64": {
+    "target": "x86_64-unknown-linux-gnu",
+    "ubuntu": {
+      "url": "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-amd64.tar.gz",
+      "sha256": "e77b6f10c2590cef872b33ee9f635a0e3fd1f57fb074c0e52b5c7f56147a0c86"
+    },
+    "packages": {
+      "libandroid-shmem": {
+        "version": "0.7",
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-shmem/libandroid-shmem_0.7_x86_64.deb",
+        "sha256": "ffa9e4c87467b158b148d0ff92dda796aa038276c2075af3269cdcdb06f25797"
+      },
+      "libtalloc": {
+        "version": "2.5.0",
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libt/libtalloc/libtalloc_2.5.0_x86_64.deb",
+        "sha256": "b8c6d95f20075dc1f9ec6573575b2444e8d526e48e0d8d6d5cf4e071e6e06530"
+      },
+      "proot": {
+        "version": "5.1.107.102",
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.1.107.102_x86_64.deb",
+        "sha256": "2497064226c15971be8131c7facead94a06c225347796326a383c832dca57758"
+      }
+    },
+    "guest_packages": {
+      "libatomic1": {
+        "version": "14.2.0-4ubuntu2~24.04.1",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libatomic1_14.2.0-4ubuntu2~24.04.1_amd64.deb",
+        "sha256": "fe49cbbc7be753528380c724a8eef5f1e31dffa9221f692c5069048d81c7449d"
+      }
+    }
+  }
+}

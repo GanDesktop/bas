@@ -1,0 +1,9 @@
+{
+  "name": "BAS",
+  "id": "io.gandesktop.bas",
+  "version": "1.0.2",
+  "build": 3,
+  "rust": ".",
+  "root": "App",
+  "appearance": "system"
+}
