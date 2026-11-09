@@ -1,17 +1,23 @@
 pub(crate) mod composer;
 pub(crate) mod interactions;
 pub(crate) mod management;
+mod model;
 pub(crate) mod navigation;
+mod outcome;
 pub(crate) mod profiles;
 mod terminal;
 pub(crate) mod timeline;
 
-use crate::shared::{api, i18n::tr};
+use crate::{
+    entities::agent::{self, Key, LoginStatus},
+    shared::{api, i18n::tr},
+};
 use bas_client::{
     acp,
-    model::{Event, EventKind, PromptSubmission, PromptSubmissionOutcome},
+    model::{Event, EventKind, InterruptionReason, PromptSubmission, PromptSubmissionOutcome},
     service::{Client, pb},
 };
+pub(crate) use model::*;
 use nsh_core::{prelude::*, storage::Storage};
 use std::time::Duration;
 
@@ -32,37 +38,26 @@ pub(crate) struct Message {
     key: String,
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub(crate) struct AuthenticationRequired {
-    pub agent: String,
-    generation: u64,
-    selection: u64,
-    creating: bool,
-}
-
 #[derive(Clone, Default)]
 pub(crate) struct State {
     pub addresses: Vec<String>,
     pub endpoint: String,
-    pub connected: bool,
-    pub loading: bool,
+    pub backend: Backend,
+    pub creation: Creation,
+    pub execution: Execution,
     pub error: String,
-    pub authentication: Option<AuthenticationRequired>,
+    pub login_request: Option<LoginRequest>,
     pub workspaces: Vec<pb::Workspace>,
     pub sessions: Vec<pb::Session>,
     pub agents: Vec<pb::Agent>,
     pub agent_icons: std::collections::BTreeMap<String, String>,
     pub workspace: Option<String>,
     pub session: Option<String>,
-    pub agent: Option<String>,
     pub draft_agent: Option<String>,
     pub messages: Vec<Message>,
     pub overview: Vec<pb::HistoryOverviewEntry>,
     pub terminals: std::collections::BTreeMap<String, terminal::Terminal>,
     pub draft: String,
-    pub sending: bool,
-    pub uncertain: bool,
-    pub running: bool,
     pub drawer: bool,
     pub configuring: bool,
     pub attachments: Vec<composer::Attachment>,
@@ -72,12 +67,32 @@ pub(crate) struct State {
     pub title_draft: String,
     pub permissions: Vec<bas_client::model::PendingPermission>,
     pub elicitations: Vec<pb::PendingElicitation>,
-    client: Option<Client>,
     owner: Option<Owner>,
     generation: u64,
     selection: u64,
     timeline_turn: u64,
     submitted_turn: Option<bas_client::model::TurnId>,
+}
+
+impl State {
+    pub fn active_agent(&self) -> Option<&str> {
+        self.sessions
+            .iter()
+            .find(|session| Some(&session.id) == self.session.as_ref())
+            .map(|session| session.agent.as_str())
+    }
+
+    pub fn login_agent(&self) -> Option<String> {
+        let agent = self.active_agent().or_else(|| {
+            if self.session.is_none() {
+                self.draft_agent.as_deref()
+            } else {
+                None
+            }
+        })?;
+        (Key::new(self.backend.endpoint()?, agent).status() == LoginStatus::Required)
+            .then(|| agent.to_owned())
+    }
 }
 
 pub(crate) fn state() -> Signal<State> {
@@ -137,8 +152,12 @@ pub(crate) fn choose_backend(value: &Option<SharedString>) {
 }
 pub(crate) fn choose_agent(value: &Option<SharedString>) {
     state().update(|s| {
+        if s.creation.creating() {
+            return;
+        }
         s.draft_agent = value.as_ref().map(ToString::to_string);
-        s.authentication = None;
+        s.login_request = None;
+        s.creation = Creation::Idle;
     });
 }
 pub(crate) fn choose_workspace(value: &Option<SharedString>) {
@@ -156,27 +175,33 @@ pub(crate) fn choose_workspace(value: &Option<SharedString>) {
         s.draft.clear();
         s.selection += 1;
         s.submitted_turn = None;
-        s.authentication = None;
-        s.running = false;
-        s.sending = false;
-        s.loading = false;
-        s.uncertain = false;
+        s.login_request = None;
+        s.creation = Creation::Idle;
+        s.execution = Execution::Idle;
     });
 }
 
 pub(crate) fn disconnect() {
-    api::replace(None);
+    let endpoint = state()
+        .get_untracked()
+        .backend
+        .endpoint()
+        .unwrap_or_default()
+        .to_owned();
+    api::replace(None, endpoint.clone());
+    agent::invalidate_backend(&endpoint);
     state().update(|s| {
         s.generation += 1;
         s.selection += 1;
         s.submitted_turn = None;
-        s.authentication = None;
-        s.client = None;
-        s.connected = false;
-        s.loading = false;
-        s.running = false;
-        s.uncertain |= s.sending;
-        s.sending = false;
+        s.login_request = None;
+        s.backend = Backend::Disconnected;
+        s.creation = Creation::Idle;
+        s.execution = if matches!(s.execution, Execution::Submitting | Execution::Uncertain) {
+            Execution::Uncertain
+        } else {
+            Execution::Idle
+        };
         s.permissions.clear();
         s.elicitations.clear();
         s.error.clear();
@@ -188,16 +213,16 @@ pub(crate) fn connect() {
     if endpoint.is_empty() {
         return;
     }
-    api::replace(None);
+    api::replace(None, endpoint.clone());
+    agent::invalidate_backend(&endpoint);
     state().update(|s| {
         s.generation += 1;
         s.selection += 1;
         s.submitted_turn = None;
-        s.authentication = None;
-        s.loading = true;
-        s.connected = false;
+        s.login_request = None;
+        s.backend = Backend::Connecting;
+        s.creation = Creation::Idle;
         s.drawer = false;
-        s.client = None;
         s.error.clear();
         s.workspaces.clear();
         s.sessions.clear();
@@ -205,7 +230,6 @@ pub(crate) fn connect() {
         s.agent_icons.clear();
         s.workspace = None;
         s.session = None;
-        s.agent = None;
         s.messages.clear();
         s.overview.clear();
         s.terminals.clear();
@@ -215,9 +239,7 @@ pub(crate) fn connect() {
         s.usage = None;
         s.configuring = false;
         s.draft.clear();
-        s.sending = false;
-        s.running = false;
-        s.uncertain = false;
+        s.execution = Execution::Idle;
     });
     let generation = state().get_untracked().generation;
     task(async move {
@@ -253,17 +275,17 @@ pub(crate) fn connect() {
         }
         match result {
             Ok(Ok((client, workspaces, sessions, agents))) => {
-                api::replace(Some(client.clone()));
+                api::replace(Some(client.clone()), saved.clone());
                 management::load_icons();
                 state().update(|s| {
-                    s.client = Some(client);
-                    s.connected = true;
+                    s.backend = Backend::Connected {
+                        client,
+                        endpoint: saved.clone(),
+                    };
                     s.drawer = crate::shared::routes::page().get_untracked()
                         == crate::shared::routes::Page::Conversation;
-                    s.loading = false;
                     s.workspace = workspaces.first().map(|w| w.id.clone());
-                    s.agent = agents.first().map(|a| a.id.clone());
-                    s.draft_agent = s.agent.clone();
+                    s.draft_agent = agents.first().map(|a| a.id.clone());
                     s.workspaces = workspaces;
                     s.sessions = sessions;
                     s.agents = agents;
@@ -279,8 +301,8 @@ pub(crate) fn connect() {
                     fail(error.to_string());
                 }
             }
-            Ok(Err(error)) => fail(error.to_string()),
-            Err(error) => fail(error.to_string()),
+            Ok(Err(error)) => state().update(|s| s.backend = Backend::Failed(error.to_string())),
+            Err(error) => state().update(|s| s.backend = Backend::Failed(error.to_string())),
         }
     });
 }
@@ -288,8 +310,6 @@ pub(crate) fn connect() {
 fn fail(error: String) {
     state().update(|s| {
         s.error = error;
-        s.loading = false;
-        s.sending = false;
     });
 }
 fn current(generation: u64, selection: u64) -> bool {
@@ -310,10 +330,10 @@ pub(crate) fn select_session(id: String) {
     state().update(|s| {
         s.selection += 1;
         s.submitted_turn = None;
-        s.authentication = None;
+        s.login_request = None;
+        s.creation = Creation::Idle;
         s.session = Some(id.clone());
         if let Some(session) = s.sessions.iter().find(|session| session.id == id) {
-            s.agent = Some(session.agent.clone());
             s.workspace = Some(session.workspace_id.clone());
         }
         s.messages.clear();
@@ -327,13 +347,16 @@ pub(crate) fn select_session(id: String) {
         s.draft.clear();
         s.drawer = false;
         s.error.clear();
-        s.sending = false;
-        s.uncertain = false;
-        s.running = s
+        s.execution = if s
             .sessions
             .iter()
             .find(|session| session.id == id)
-            .is_some_and(|session| session.active_turn.is_some());
+            .is_some_and(|session| session.active_turn.is_some())
+        {
+            Execution::Running
+        } else {
+            Execution::Idle
+        };
     });
     observe();
     interactions::observe();
@@ -343,7 +366,8 @@ pub(crate) fn refresh() {
     state().update(|s| {
         s.selection += 1;
         s.submitted_turn = None;
-        s.authentication = None;
+        s.login_request = None;
+        s.creation = Creation::Idle;
         s.messages.clear();
         s.overview.clear();
         s.terminals.clear();
@@ -360,7 +384,7 @@ pub(crate) fn refresh() {
 // Read committed events incrementally so reconnecting never replays a prompt.
 fn observe() {
     let s = state().get_untracked();
-    let (Some(mut client), Some(id)) = (s.client, s.session) else {
+    let (Some(mut client), Some(id)) = (s.backend.client(), s.session) else {
         return;
     };
     task(async move {
@@ -433,7 +457,7 @@ fn observe() {
                     client = next;
                     if let Some(session) = response.into_inner().session {
                         state().update(|s| {
-                            s.running = session.active_turn.is_some();
+                            s.execution.observe(session.active_turn.is_some());
                             if let Some(old) =
                                 s.sessions.iter_mut().find(|old| old.id == session.id)
                             {
@@ -454,168 +478,243 @@ fn observe() {
 
 fn apply(event: Event, following: bool) {
     let sequence = event.cursor.raw();
-    state().update(|s| match event.kind {
-        EventKind::Acp(update) => {
-            let (role, chunk) = match update {
-                acp::SessionUpdate::UserMessageChunk(chunk) => ("user", chunk),
-                acp::SessionUpdate::AgentMessageChunk(chunk) => ("assistant", chunk),
-                acp::SessionUpdate::AgentThoughtChunk(chunk) => ("thought", chunk),
-                acp::SessionUpdate::UsageUpdate(usage) => {
-                    s.usage = Some(usage);
-                    return;
-                }
-                acp::SessionUpdate::ToolCallUpdate(update) => {
-                    terminal::apply(&mut s.terminals, update.meta.as_ref());
-                    if let Some(message) = s
-                        .messages
-                        .iter_mut()
-                        .find(|m| m.key == update.tool_call_id.to_string() && m.tool.is_some())
-                        && let Some(tool) = &mut message.tool
-                    {
-                        tool.update(update.fields);
-                        message.body = tool.title.clone();
+    let mut readiness = None;
+    batch(|| {
+        state().update(|s| match event.kind {
+            EventKind::Acp(update) => {
+                let (role, chunk) =
+                    match update {
+                        acp::SessionUpdate::UserMessageChunk(chunk) => ("user", chunk),
+                        acp::SessionUpdate::AgentMessageChunk(chunk) => ("assistant", chunk),
+                        acp::SessionUpdate::AgentThoughtChunk(chunk) => ("thought", chunk),
+                        acp::SessionUpdate::UsageUpdate(usage) => {
+                            s.usage = Some(usage);
+                            return;
+                        }
+                        acp::SessionUpdate::ToolCallUpdate(update) => {
+                            terminal::apply(&mut s.terminals, update.meta.as_ref());
+                            if let Some(message) = s.messages.iter_mut().find(|m| {
+                                m.key == update.tool_call_id.to_string() && m.tool.is_some()
+                            }) && let Some(tool) = &mut message.tool
+                            {
+                                tool.update(update.fields);
+                                message.body = tool.title.clone();
+                            }
+                            return;
+                        }
+                        acp::SessionUpdate::ToolCall(tool) => {
+                            terminal::apply(&mut s.terminals, tool.meta.as_ref());
+                            s.messages.push(Message {
+                                sequence,
+                                turn: s.timeline_turn,
+                                role: "agent".into(),
+                                body: tool.title.clone(),
+                                key: tool.tool_call_id.to_string(),
+                                tool: Some(tool),
+                                media: None,
+                            });
+                            return;
+                        }
+                        _ => return,
+                    };
+                let body = match chunk.content {
+                    acp::ContentBlock::Text(text) => text.text,
+                    content => {
+                        s.messages.push(Message {
+                            sequence,
+                            turn: s.timeline_turn,
+                            role: role.into(),
+                            media: Some(content),
+                            ..Default::default()
+                        });
+                        return;
                     }
-                    return;
-                }
-                acp::SessionUpdate::ToolCall(tool) => {
-                    terminal::apply(&mut s.terminals, tool.meta.as_ref());
-                    s.messages.push(Message {
-                        sequence,
-                        turn: s.timeline_turn,
-                        role: "agent".into(),
-                        body: tool.title.clone(),
-                        key: tool.tool_call_id.to_string(),
-                        tool: Some(tool),
-                        media: None,
-                    });
-                    return;
-                }
-                _ => return,
-            };
-            let body = match chunk.content {
-                acp::ContentBlock::Text(text) => text.text,
-                content => {
+                };
+                let key = chunk
+                    .message_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_default();
+                if let Some(last) = s.messages.last_mut().filter(|m| {
+                    m.role == role
+                        && m.key == key
+                        && m.turn == s.timeline_turn
+                        && m.media.is_none()
+                        && m.tool.is_none()
+                }) {
+                    last.body.push_str(&body);
+                } else {
                     s.messages.push(Message {
                         sequence,
                         turn: s.timeline_turn,
                         role: role.into(),
-                        media: Some(content),
+                        body,
+                        key,
                         ..Default::default()
                     });
-                    return;
                 }
-            };
-            let key = chunk
-                .message_id
-                .map(|id| id.to_string())
-                .unwrap_or_default();
-            if let Some(last) = s.messages.last_mut().filter(|m| {
-                m.role == role
-                    && m.key == key
-                    && m.turn == s.timeline_turn
-                    && m.media.is_none()
-                    && m.tool.is_none()
-            }) {
-                last.body.push_str(&body);
-            } else {
-                s.messages.push(Message {
-                    sequence,
-                    turn: s.timeline_turn,
-                    role: role.into(),
-                    body,
-                    key,
-                    ..Default::default()
-                });
             }
-        }
-        EventKind::TurnStarted { .. } => {
-            s.running = true;
-            s.timeline_turn += 1;
-        }
-        EventKind::TurnFinished { turn, result } => {
-            s.running = false;
-            s.timeline_turn += 1;
-            if let Err(error) = result {
-                if error.code == acp::ErrorCode::AuthRequired
-                    && (following || s.submitted_turn == Some(turn))
+            EventKind::TurnStarted { .. } => {
+                s.error.clear();
+                s.execution.observe(true);
+                s.timeline_turn += 1;
+            }
+            EventKind::TurnFinished { turn, result } => {
+                if !s.execution.submitting()
+                    && (s.submitted_turn.is_none() || s.submitted_turn == Some(turn))
                 {
-                    s.error.clear();
-                    if let Some(agent) = s.agent.clone() {
-                        s.authentication = Some(AuthenticationRequired {
-                            agent,
-                            creating: false,
-                            generation: s.generation,
-                            selection: s.selection,
-                        });
+                    s.execution = Execution::Idle;
+                }
+                s.timeline_turn += 1;
+                if let Err(error) = result {
+                    if error.code == acp::ErrorCode::AuthRequired
+                        && (following || s.submitted_turn == Some(turn))
+                    {
+                        s.error.clear();
+                        if let (Some(agent), Some(id)) =
+                            (s.active_agent().map(str::to_owned), s.session.clone())
+                        {
+                            readiness = Some((
+                                Key::new(s.backend.endpoint().unwrap_or_default(), &agent),
+                                LoginStatus::Required,
+                            ));
+                            s.login_request = Some(LoginRequest {
+                                target: LoginTarget::Session { agent, id },
+                                generation: s.generation,
+                                selection: s.selection,
+                            });
+                        }
+                    } else if error.code != acp::ErrorCode::AuthRequired {
+                        s.error = error.message;
                     }
-                } else if error.code != acp::ErrorCode::AuthRequired {
-                    s.error = error.message;
+                } else if let Ok(response) = result {
+                    if let Some(message) = outcome::feedback(&response) {
+                        s.error = message;
+                    } else if (following || s.submitted_turn == Some(turn))
+                        && let Some(agent) = s.active_agent()
+                    {
+                        readiness = Some((
+                            Key::new(s.backend.endpoint().unwrap_or_default(), agent),
+                            LoginStatus::Ready,
+                        ));
+                    }
+                }
+                if s.submitted_turn == Some(turn) {
+                    s.submitted_turn = None;
                 }
             }
+            EventKind::TurnInterrupted { turn, reason } => {
+                s.error = match reason {
+                    InterruptionReason::BackendFailure { message }
+                    | InterruptionReason::DispatchFailure { message } => message,
+                    InterruptionReason::SessionStopped => tr!("turn-session-stopped"),
+                    InterruptionReason::DaemonRestarted => tr!("turn-service-restarted"),
+                    InterruptionReason::CancelledBeforeDispatch => {
+                        tr!("turn-cancelled-before-dispatch")
+                    }
+                };
+                if s.submitted_turn.is_none() || s.submitted_turn == Some(turn) {
+                    if !s.execution.submitting() {
+                        s.execution = Execution::Idle;
+                    }
+                    s.submitted_turn = None;
+                }
+                s.timeline_turn += 1;
+            }
+            EventKind::Failed { message } => s.error = message,
+            _ => {}
+        });
+        if let Some((key, status)) = readiness {
+            key.record(status);
         }
-        EventKind::TurnInterrupted { .. } => {
-            s.running = false;
-            s.timeline_turn += 1;
-        }
-        EventKind::Failed { message } => s.error = message,
-        _ => {}
     });
 }
 
 pub(crate) fn create_session() {
-    create_session_with_draft(false);
-}
-
-fn create_session_with_draft(preserve_draft: bool) {
     let s = state().get_untracked();
-    let (Some(mut client), Some(workspace_id), Some(agent)) =
-        (s.client, s.workspace, s.draft_agent)
-    else {
+    let (Some(workspace), Some(agent)) = (s.workspace, s.draft_agent) else {
         return;
     };
-    if s.loading {
+    if !s.backend.connected() || s.creation.creating() {
         return;
     }
-    state().update(|s| {
-        s.loading = true;
-        s.error.clear();
+    create_session_request(CreateSession {
+        agent,
+        workspace,
+        generation: s.generation,
+        selection: s.selection,
     });
-    state().update(|s| s.authentication = None);
-    let requested_agent = agent.clone();
+}
+
+fn create_session_request(request: CreateSession) {
+    let s = state().get_untracked();
+    let Some(mut client) = s.backend.client() else {
+        return;
+    };
+    let draft = s.session.is_none().then_some((s.draft, s.attachments));
+    state().update(|s| {
+        s.creation = Creation::Creating(request.clone());
+        s.login_request = None;
+    });
     task(async move {
+        let target = request.clone();
         let result = background(async move {
             client
                 .create_session(pb::CreateSessionRequest {
-                    workspace_id: Some(workspace_id),
-                    agent,
+                    workspace_id: Some(target.workspace),
+                    agent: target.agent,
                     ..Default::default()
                 })
                 .await
         })
         .await;
-        if !current(s.generation, s.selection) {
+        if !current(request.generation, request.selection)
+            || !state()
+                .with(|s| matches!(&s.creation, Creation::Creating(active) if active == &request))
+        {
             return;
         }
-        state().update(|s| s.loading = false);
         match result {
             Ok(Ok(response)) => {
                 if let Some(session) = response.into_inner().session {
+                    Key::new(
+                        s.backend.endpoint().expect("connected backend"),
+                        &request.agent,
+                    )
+                    .record(LoginStatus::Ready);
                     let id = session.id.clone();
                     state().update(|s| s.sessions.insert(0, session));
                     select_session(id);
-                    if preserve_draft {
-                        state().update(|state| {
-                            state.draft = s.draft;
-                            state.attachments = s.attachments;
+                    if let Some((draft, attachments)) = draft {
+                        state().update(|s| {
+                            s.draft = draft;
+                            s.attachments = attachments;
                         });
                     }
+                } else {
+                    state().update(|s| {
+                        s.creation = Creation::Failed {
+                            request,
+                            error: tr!("missing-session"),
+                        }
+                    });
                 }
             }
             Ok(Err(error)) if authentication_required(&error) => {
-                require_authentication(requested_agent, true);
+                state().update(|s| s.creation = Creation::AuthenticationRequired(request.clone()));
+                require_authentication(LoginTarget::Create(request));
             }
-            Ok(Err(error)) => fail(error.message().to_owned()),
-            other => fail(format!("{other:?}")),
+            Ok(Err(error)) => state().update(|s| {
+                s.creation = Creation::Failed {
+                    request,
+                    error: error.message().to_owned(),
+                }
+            }),
+            Err(error) => state().update(|s| {
+                s.creation = Creation::Failed {
+                    request,
+                    error: error.to_string(),
+                }
+            }),
         }
     });
 }
@@ -623,14 +722,14 @@ fn create_session_with_draft(preserve_draft: bool) {
 pub(crate) fn send() {
     let s = state().get_untracked();
     if s.configuring
-        || s.sending
-        || s.running
-        || s.uncertain
+        || !s.execution.can_send()
+        || s.login_agent().is_some()
         || (s.draft.trim().is_empty() && s.attachments.is_empty())
     {
         return;
     }
-    let (Some(mut client), Some(id)) = (s.client, s.session) else {
+    let agent = s.active_agent().map(str::to_owned);
+    let (Some(mut client), Some(id)) = (s.backend.client(), s.session) else {
         return;
     };
     let mut content: Vec<_> = s.attachments.iter().map(|a| a.content.clone()).collect();
@@ -641,7 +740,7 @@ pub(crate) fn send() {
     }
     let submission = PromptSubmission::new(acp::PromptRequest::new(id, content));
     state().update(|s| {
-        s.sending = true;
+        s.execution = Execution::Submitting;
         s.submitted_turn = Some(submission.turn);
         s.error.clear();
     });
@@ -650,22 +749,49 @@ pub(crate) fn send() {
         if !current(s.generation, s.selection) {
             return;
         }
-        state().update(|s| s.sending = false);
         match result {
             Ok(Ok(PromptSubmissionOutcome::Accepted(_))) => state().update(|s| {
                 s.draft.clear();
                 s.attachments.clear();
-                s.running = true;
+                if s.execution.submitting() {
+                    // History can finish the turn before its acceptance receipt arrives.
+                    s.execution = if s.submitted_turn.is_some() {
+                        Execution::Running
+                    } else {
+                        Execution::Idle
+                    };
+                }
             }),
-            Ok(Ok(PromptSubmissionOutcome::Rejected(error))) => fail(error.to_string()),
+            Ok(Ok(PromptSubmissionOutcome::Rejected(error))) => {
+                state().update(|s| {
+                    s.execution = Execution::Idle;
+                    s.submitted_turn = None;
+                });
+                fail(error.to_string());
+            }
             Ok(Err(error)) if authentication_required(&error) => {
-                if let Some(agent) = s.agent {
-                    require_authentication(agent, false);
+                state().update(|s| {
+                    s.execution = Execution::Idle;
+                    s.submitted_turn = None;
+                });
+                if let Some(agent) = agent {
+                    require_authentication(LoginTarget::Session {
+                        agent,
+                        id: state().get_untracked().session.expect("current session"),
+                    });
                 }
             }
             _ => {
-                state().update(|s| s.uncertain = true);
-                fail(tr!("uncertain"));
+                state().update(|s| {
+                    if s.submitted_turn.is_some() {
+                        s.execution = Execution::Uncertain;
+                        s.error = tr!("uncertain");
+                    } else {
+                        s.execution = Execution::Idle;
+                        s.draft.clear();
+                        s.attachments.clear();
+                    }
+                });
             }
         }
     });
@@ -673,7 +799,7 @@ pub(crate) fn send() {
 
 pub(crate) fn cancel() {
     let s = state().get_untracked();
-    let (Some(mut client), Some(id)) = (s.client, s.session) else {
+    let (Some(mut client), Some(id)) = (s.backend.client(), s.session) else {
         return;
     };
     task(async move {
@@ -696,31 +822,39 @@ fn authentication_required(error: &tonic::Status) -> bool {
             .is_ok_and(|error| error.code == acp::ErrorCode::AuthRequired)
 }
 
-fn require_authentication(agent: String, creating: bool) {
-    state().update(|s| {
-        s.error.clear();
-        s.drawer = false;
-        s.authentication = Some(AuthenticationRequired {
-            agent,
-            creating,
-            generation: s.generation,
-            selection: s.selection,
+fn require_authentication(target: LoginTarget) {
+    let Some(context) = api::context() else {
+        return;
+    };
+    let key = Key::new(context.backend, target.agent());
+    batch(|| {
+        key.record(LoginStatus::Required);
+        state().update(|s| {
+            s.error.clear();
+            s.drawer = false;
+            s.login_request = Some(LoginRequest {
+                target,
+                generation: s.generation,
+                selection: s.selection,
+            });
         });
     });
 }
 
 pub(crate) fn authentication_completed(agent: &str) {
-    let Some(required) = state().get_untracked().authentication else {
+    let Some(required) = state().get_untracked().login_request else {
         return;
     };
-    if required.agent != agent || !current(required.generation, required.selection) {
+    if required.target.agent() != agent || !current(required.generation, required.selection) {
         return;
     }
     state().update(|s| {
-        s.authentication = None;
+        s.login_request = None;
         s.error.clear();
     });
-    if required.creating {
-        create_session_with_draft(true);
+    if let LoginTarget::Create(request) = required.target {
+        if state().with(|s| matches!(&s.creation, Creation::AuthenticationRequired(active) if active == &request)) {
+            create_session_request(request);
+        }
     }
 }

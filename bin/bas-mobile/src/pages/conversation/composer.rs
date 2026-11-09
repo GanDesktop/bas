@@ -1,5 +1,5 @@
 use crate::{
-    features::connection::{self as model, composer as data, state},
+    features::connection::{self as model, Execution, composer as data, state},
     shared::{
         i18n::tr,
         preferences,
@@ -43,12 +43,17 @@ pub(super) fn render() -> impl IntoElement {
     // Keep the native input type stable: changing it reconnects Android's IME.
     el! { .view { px_3; pt_2; pb: $move || px(8.0)+if keyboard_height()>Points::ZERO {Points::ZERO}else{safe_area().bottom} } [
         $(when(||state().with(|s|!s.error.is_empty()),||text(||state().with(|s|s.error.clone())).text_size(crate::shared::ui::font_size).text_color(||theme().destructive).mb_2())),
+        $(when(||state().with(|s|s.execution.submitting()||s.execution.running()),||text(||state().with(|s|match s.execution {
+            Execution::Submitting => tr!("prompt-submitting"),
+            Execution::Running => tr!("prompt-running"),
+            _ => String::new(),
+        })).test_id("prompt-progress").text_size(ui::font_size).text_color(||theme().muted_foreground).mb_2())),
         $(when(||state().with(|s|!s.permissions.is_empty()||!s.elicitations.is_empty()), ||view().mb_2().child(super::interactions::render()))),
-        $(when(||state().with(|s|s.authentication.is_some()), || view().mb_2().gap_2()
+        $(when(||state().with(|s|s.login_agent().is_some()), || view().mb_2().gap_2()
             .child(text(tr!("auth-required")).text_size(ui::font_size))
             .child(ui::labeled_action(ui::LOGIN, tr!("authenticate"), || {
-                if let Some(required) = state().get_untracked().authentication {
-                    crate::features::agent_management::auth::open_agent(required.agent);
+                if let Some(agent) = state().get_untracked().login_agent() {
+                    crate::features::agent_management::auth::open_agent(agent);
                 }
             })))),
         $(super::attachments::render()),
@@ -60,16 +65,16 @@ pub(super) fn render() -> impl IntoElement {
                 .min_w(px(0.0)).h_full().mx(move ||px(if expanded(){12.0}else{0.0})).py(editor_padding)
                 .text_size(||px(preferences::state().with(|p|p.content_size))).value(||state().with(|s|s.draft.clone())).on_change(model::edit_draft)
                 .on_focus(move ||focused.set(true)).on_blur(move ||focused.set(false))
-                .disabled(||state().with(|s|s.session.is_none()||s.sending))),
+                .disabled(||state().with(|s|s.session.is_none()||s.execution.submitting()))),
             .view { test_id: "composer-toolbar"; col_span: 3; col_start: 1; row_start: $move ||if expanded(){2_i16}else{1_i16}; h: 44.0.px; pointer_events: PointerEvents::BoxNone; flex_row; items_center; gap_1 } [
                 $(attachment_menu(attachments)),
                 $(when(expanded,move || model_options(model_open))),
                 .view { flex_1; pointer_events: PointerEvents::None },
                 $(when(expanded,move ||harness_menu(harness))),
-                $(when(||state().with(|s|s.running),||ui::icon_action(ui::STOP,tr!("cancel"),model::cancel))),
-                $(when(||state().with(|s|!s.running),||ui::action(model::send).accessibility_label(tr!("send")).size(px(44.0)).rounded_full().items_center()
+                $(when(||state().with(|s|s.execution.running()),||ui::icon_action(ui::STOP,tr!("cancel"),model::cancel))),
+                $(when(||state().with(|s|!s.execution.running()),||ui::action(model::send).accessibility_label(tr!("send")).size(px(44.0)).rounded_full().items_center()
                     .child(view().size(px(32.0)).rounded_full().items_center().justify_center().bg(||theme().primary).child(image(ui::SEND).size(px(18.0)).tint_color(||theme().primary_foreground)))
-                    .disabled(||state().with(|s|s.session.is_none()||(s.draft.trim().is_empty()&&s.attachments.is_empty())||s.sending||s.configuring||s.uncertain)))),
+                    .disabled(||state().with(|s|s.session.is_none()||s.login_agent().is_some()||(s.draft.trim().is_empty()&&s.attachments.is_empty())||s.configuring||!s.execution.can_send())))),
             ],
         ],
     ] }

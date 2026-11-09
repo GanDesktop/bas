@@ -145,6 +145,7 @@ pub(super) fn detail() -> impl IntoElement {
     )
 }
 fn detail_content(entry: Entry) -> impl IntoElement {
+    let status_id = entry.id.clone();
     let installed = entry.spec.is_some();
     let custom = entry.source == Source::Custom;
     let acp = entry.source != Source::Embedded;
@@ -183,8 +184,11 @@ fn detail_content(entry: Entry) -> impl IntoElement {
         );
     }
     if installed && acp {
+        content = content.child(crate::widgets::agent::login_status(move || {
+            status_id.clone()
+        }));
         content = content.child(labeled_action(ui::LOGIN, tr!("authenticate"), move || {
-            agents::auth::open(login.clone(), None);
+            agents::auth::open(login.clone());
         }));
         content = content.child(
             labeled_action(ui::ACTIVITY, tr!("check-agent"), move || {
@@ -271,14 +275,40 @@ fn confirm_logout(entry: Entry) {
 fn check_result() -> impl IntoElement {
     el! { .view { p_4; gap_2; border_t_1; border_color: $move || theme().border } [
         $(text(|| agents::state().with(|s| s.check.as_ref().map(|(entry, _)| entry.name.clone()).unwrap_or_default()))) { font_weight: FontWeight::SEMIBOLD },
-        $(text(|| agents::state().with(|s| s.check.as_ref().map(|(_, check)| if check.message.is_empty() { format!("{:?}", check.status()) } else { check.message.clone() }).unwrap_or_default()))) { text_sm },
-        $(when(|| agents::state().with(|s| s.check.as_ref().is_some_and(|(_, c)| c.status() == bas_client::service::pb::AgentCheckStatus::AuthenticationRequired)), || {
+        $(text(check_message)) { text_sm },
+        $(when(|| checked_login() == crate::entities::agent::LoginStatus::Required, || {
             labeled_action(ui::LOGIN, tr!("authenticate"), || {
-                if let Some((entry, check)) = agents::state().get_untracked().check { agents::auth::open(entry, Some(check)); }
+                if let Some((entry, _)) = agents::state().get_untracked().check { agents::auth::open(entry); }
             })
         })),
         $(labeled_action(ui::BACK, tr!("close"), || agents::state().update(|s| s.check = None))),
     ] }
+}
+
+fn checked_login() -> crate::entities::agent::LoginStatus {
+    use crate::{entities::agent::Key, shared::api};
+    agents::state().with(|s| {
+        s.check
+            .as_ref()
+            .and_then(|(entry, _)| {
+                api::context().map(|context| Key::new(context.backend, &entry.id).status())
+            })
+            .unwrap_or_default()
+    })
+}
+
+fn check_message() -> String {
+    use crate::entities::agent::LoginStatus;
+    match checked_login() {
+        LoginStatus::Ready => tr!("auth-complete"),
+        LoginStatus::Required => tr!("auth-required"),
+        LoginStatus::Unknown => agents::state().with(|s| {
+            s.check
+                .as_ref()
+                .map(|(_, check)| check.message.clone())
+                .unwrap_or_default()
+        }),
+    }
 }
 pub(super) fn editor() -> impl IntoElement {
     scroll().flex_1().child(el! { .view { p_4; gap_3 } [

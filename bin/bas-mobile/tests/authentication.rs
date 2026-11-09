@@ -1,7 +1,7 @@
 use bas_client::service::{Client, pb};
 use nsh_core::{
     element::Root,
-    platform::{Environment, Idiom, Os},
+    platform::{Environment, Idiom, Lifecycle, Os},
     prelude::*,
 };
 use nsh_engine::EngineConfig;
@@ -32,6 +32,7 @@ fn android_interactive_login_from_conversation_and_agent_details() {
         .join("acp-test-agent");
     assert!(agent.is_file(), "build acp-test-agent before this test");
     let marker = root.join("demo-authenticated");
+    let other_marker = root.join("other-authenticated");
     // The registry's persisted empty catalog keeps this test independent of its CDN.
     fs::create_dir_all(root.join("data/bas/acp")).expect("catalog cache");
     fs::write(
@@ -45,6 +46,10 @@ fn android_interactive_login_from_conversation_and_agent_details() {
     .expect("cached catalog");
     let config = serde_json::json!({"agents":[{"id":"demo","kind":"acp","command":{
         "program":agent,"args":["--protocol","v1","--require-auth","--interactive-auth","--auth-state",marker]
+    }},{"id":"external-login","kind":"acp","command":{
+        "program":agent,"args":["--protocol","v1","--require-auth","--auth-state",marker]
+    }},{"id":"other","kind":"acp","command":{
+        "program":agent,"args":["--protocol","v1","--require-auth","--interactive-auth","--auth-state",other_marker]
     }}],"acp":{"pool_size":0}});
     let (_daemon, endpoint) = backend::daemon_with(&root, &config.to_string());
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
@@ -154,6 +159,64 @@ fn android_interactive_login_from_conversation_and_agent_details() {
     })
     .expect("agent echo");
 
+    // An unauthenticated agent's failed creation must leave the selected,
+    // authenticated conversation and the BAS connection usable.
+    app.type_text("label:Message your agent…", "Keep the current agent draft")
+        .expect("draft before choosing another agent");
+    app.press("label:New conversation")
+        .expect("create with another agent");
+    app.press("label:other")
+        .expect("choose unauthenticated agent");
+    app.wait_for_within("id:authentication-page", DEADLINE)
+        .expect("other agent login");
+    app.wait_for_within("label:Demo sign in", DEADLINE)
+        .expect("other login methods");
+    app.press("label:Back")
+        .expect("cancel creating the other conversation");
+    app.wait_for_gone("id:authentication-page", DEADLINE)
+        .expect("original conversation");
+    app.wait_for_gone("label:Sign in", DEADLINE)
+        .expect("other agent cannot demand login for demo");
+    app.wait_for("text:Keep the current agent draft")
+        .expect("original draft intact");
+    app.press("label:Open sidebar").expect("backend status");
+    app.wait_for_within("text:Connected", DEADLINE)
+        .expect("BAS remains connected");
+    app.press("text:New conversation")
+        .expect("inspect per-agent status");
+    app.wait_for("text:Signed in")
+        .expect("authenticated agent status in the picker");
+    app.wait_for("text:Sign in required")
+        .expect("other agent status in the same picker");
+    fs::write(
+        root.join("agent-statuses.txt"),
+        app.screen().texts().join("\n"),
+    )
+    .expect("per-agent status artifact");
+    app.press("label:other")
+        .expect("other agent still requires its own login");
+    app.wait_for_within("id:authentication-page", DEADLINE)
+        .expect("other login remains isolated");
+    app.press("label:Back")
+        .expect("return to authenticated agent");
+    app.wait_for_gone("id:authentication-page", DEADLINE)
+        .expect("conversation restored");
+    app.press("label:Send")
+        .expect("send preserved draft to authenticated agent");
+    app.wait_until("original agent still usable", DEADLINE, |screen| {
+        screen
+            .texts()
+            .iter()
+            .filter(|text| **text == "Keep the current agent draft")
+            .count()
+            == 2
+    })
+    .expect("authenticated agent still replies");
+    assert!(
+        !other_marker.exists(),
+        "other agent is still unauthenticated"
+    );
+
     // Expiration during a live prompt must use the same login page, without replaying that prompt.
     fs::remove_file(&marker).expect("expire demo authorization");
     app.type_text("label:Message your agent…", "Expired sign-in prompt")
@@ -208,6 +271,8 @@ fn android_interactive_login_from_conversation_and_agent_details() {
     app.wait_for_within("text:demo", DEADLINE)
         .expect("installed agent");
     app.press("text:demo").expect("agent detail");
+    app.wait_for("text:Signed in")
+        .expect("details share the conversation readiness");
     app.wait_for("label:Sign in")
         .expect("login is visible without checking connection");
     app.press("label:Sign in")
@@ -225,7 +290,7 @@ fn android_interactive_login_from_conversation_and_agent_details() {
     app.wait_for("text:Keep my draft through login settings")
         .expect("draft preserved");
     let sessions = runtime.block_on(async {
-        Client::connect(endpoint)
+        Client::connect(endpoint.clone())
             .await
             .expect("client")
             .list_sessions(pb::ListSessionsRequest {
@@ -241,10 +306,109 @@ fn android_interactive_login_from_conversation_and_agent_details() {
         1,
         "reauthentication keeps the same conversation"
     );
+
+    // A separate agent process can persist credentials before the original
+    // authenticate request returns, as with browser-based sign-in.
+    fs::remove_file(&marker).expect("expire authorization before external login");
+    app.press("label:App menu").expect("menu");
+    app.press("label:Settings").expect("settings");
+    app.press("label:Agents").expect("agents");
+    app.wait_for_within("text:demo", DEADLINE).expect("agent");
+    app.press("text:demo").expect("details");
+    app.press("label:Check connection")
+        .expect("discover expired credentials");
+    app.wait_for_within("text:Sign in required", DEADLINE)
+        .expect("check updates shared readiness");
+    app.press("label:Close").expect("close check summary");
+    app.press("label:Sign in").expect("login page");
+    app.wait_for_within("label:Demo sign in", DEADLINE)
+        .expect("method");
+    app.press("label:Demo sign in").expect("start login");
+    app.wait_for_within("label:Demo account", DEADLINE)
+        .expect("form");
+    app.type_text("label:Demo account", "external-demo")
+        .expect("account");
+    app.press("label:Continue").expect("submit account");
+    app.wait_for_within("label:example.com", DEADLINE)
+        .expect("browser step");
+    app.press("label:Check sign-in status")
+        .expect("check while authentication is pending");
+    app.wait_until("readiness check finished", DEADLINE, |screen| {
+        screen.enabled("label:Check sign-in status") == Ok(true)
+    })
+    .expect("pending login checked without cancelling");
+    assert!(!marker.exists(), "checking does not authenticate the agent");
+    app.wait_for("label:Continue")
+        .expect("browser authorization remains pending");
+    app.press("label:example.com").expect("open browser");
+    app.set_environment("browser foreground", |env| {
+        env.lifecycle = Lifecycle::Background
+    })
+    .expect("background app");
+    runtime.block_on(async {
+        let mut client = Client::connect(endpoint)
+            .await
+            .expect("external login client");
+        let catalog = client
+            .list_agent_catalog(pb::ListAgentCatalogRequest { refresh: false })
+            .await
+            .expect("catalog")
+            .into_inner();
+        let catalog: bas_client::management::Catalog =
+            serde_json::from_slice(&catalog.catalog_json).expect("catalog payload");
+        let spec = catalog
+            .entries
+            .into_iter()
+            .find(|entry| entry.id == "external-login")
+            .expect("external login agent")
+            .spec
+            .expect("installed agent");
+        let result = client
+            .authenticate_agent(pb::AuthenticateAgentRequest {
+                agent: "external-login".into(),
+                expected_spec_json: serde_json::to_vec(&spec).expect("agent spec"),
+                method_id: "demo-login".into(),
+                expected_method_json: Vec::new(),
+            })
+            .await
+            .expect("external process signs in")
+            .into_inner();
+        assert_eq!(
+            result.check.expect("readiness check").status(),
+            pb::AgentCheckStatus::Connected
+        );
+    });
+    assert!(marker.is_file(), "external process persisted authorization");
+    app.set_environment("return from browser", |env| {
+        env.lifecycle = Lifecycle::Active
+    })
+    .expect("foreground app");
+    app.wait_for_within("text:Signed in", DEADLINE)
+        .expect("persisted login finishes the waiting authorization page");
+    app.wait_for_gone("label:Continue", DEADLINE)
+        .expect("stale browser form removed");
+    app.wait_for_gone("label:Cancel sign in", DEADLINE)
+        .expect("waiting flow stopped");
+    fs::write(
+        root.join("external-login.txt"),
+        app.screen().texts().join("\n"),
+    )
+    .expect("external login artifact");
+    app.press("label:Done")
+        .expect("return from completed login");
+    app.wait_for("text:Signed in")
+        .expect("details reflect the completed login");
+    app.wait_for_gone("text:Sign in required", DEADLINE)
+        .expect("no stale login requirement in details");
+    app.press("label:Back").expect("agents");
+    app.press("label:Back").expect("settings");
+    app.press("label:Back").expect("conversation");
+    app.wait_for("text:Keep my draft through login settings")
+        .expect("external login preserves the draft");
     fs::write(
         root.join("conversation.txt"),
         app.screen().texts().join("\n"),
     )
     .expect("conversation artifact");
-    fs::write(root.join("result.txt"),"PASS: automatic ACP login page, return/reopen, validation, cancellation, decline/retry, form and browser authorization, creation retry, live prompt expiry, same session/history, direct settings entry and draft preservation\n").expect("result");
+    fs::write(root.join("result.txt"),"PASS: automatic ACP login page, return/reopen, validation, cancellation, decline/retry, form and browser authorization, creation retry, per-agent login isolation, independent BAS connection and creation state, live prompt expiry, same session/history, direct settings entry, external process login while authenticate is pending, foreground reconciliation and draft preservation\n").expect("result");
 }

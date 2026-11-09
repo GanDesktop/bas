@@ -4,6 +4,7 @@ use crate::{
     shared::{api, preferences, routes},
 };
 use nsh_base::{nav_page, nav_stack, theme};
+use nsh_core::platform::Lifecycle;
 use nsh_core::prelude::*;
 
 pub(crate) fn root() -> impl IntoElement {
@@ -43,14 +44,14 @@ pub(crate) fn root() -> impl IntoElement {
         let local = crate::features::local_service::status().get();
         if local.available
             && matches!(local.phase.as_str(), "stopped" | "stopping" | "error")
-            && connection::state().with(|s| s.connected && s.endpoint == local.endpoint)
+            && connection::state().with(|s| s.backend.endpoint() == Some(local.endpoint.as_str()))
         {
             connection::disconnect();
         }
     });
-    let backend = stored(None::<(String, bool)>);
+    let backend = stored(None::<Option<String>>);
     effect(move || {
-        let current = connection::state().with(|s| (s.endpoint.clone(), s.connected));
+        let current = connection::state().with(|s| s.backend.endpoint().map(str::to_owned));
         if backend.get().as_ref() != Some(&current) {
             backend.replace(Some(current));
             if routes::page().get_untracked() == routes::Page::Authentication {
@@ -68,7 +69,9 @@ pub(crate) fn root() -> impl IntoElement {
     });
     effect(|| {
         let page = routes::page().get();
-        if page == routes::Page::Conversation && connection::state().get_untracked().connected {
+        if page == routes::Page::Conversation
+            && connection::state().get_untracked().backend.connected()
+        {
             connection::management::reload();
             if let Some(agent) = routes::take_launch() {
                 connection::choose_agent(&Some(agent.into()));
@@ -78,11 +81,11 @@ pub(crate) fn root() -> impl IntoElement {
     });
     let required = stored(None);
     effect(move || {
-        let next = connection::state().with(|s| s.authentication.clone());
+        let next = connection::state().with(|s| s.login_request.clone());
         if required.get() != next {
             required.replace(next.clone());
             if let Some(next) = next {
-                agent_management::auth::open_agent(next.agent);
+                agent_management::auth::open_agent(next.target.agent().to_owned());
             }
         }
     });
@@ -93,12 +96,23 @@ pub(crate) fn root() -> impl IntoElement {
             agent_management::auth::cancel();
         }
     });
+    let last_lifecycle = stored(lifecycle());
+    effect(move || {
+        let current = lifecycle();
+        if last_lifecycle.replace(current) != Lifecycle::Active
+            && current == Lifecycle::Active
+            && routes::page().get_untracked() == routes::Page::Authentication
+            && agent_management::auth::state().get_untracked().running()
+        {
+            agent_management::auth::recheck();
+        }
+    });
     effect(|| {
         if routes::page().get() == routes::Page::Authentication
             && agent_management::auth::connected()
             && routes::Page::Authentication.parent() == routes::Page::Conversation
         {
-            let agent = agent_management::auth::state().get_untracked().agent;
+            let agent = agent_management::auth::state().get_untracked().key.agent;
             routes::back();
             connection::authentication_completed(&agent);
         }

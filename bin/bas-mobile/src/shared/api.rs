@@ -5,6 +5,7 @@ use std::future::Future;
 #[derive(Clone, Default)]
 struct Connection {
     client: Option<Client>,
+    backend: String,
     generation: u64,
     owner: Option<Owner>,
 }
@@ -13,10 +14,11 @@ pub(crate) fn initialize() {
     global::<Connection>().update(|s| s.owner = Some(Owner::current()));
 }
 
-pub(crate) fn replace(client: Option<Client>) {
+pub(crate) fn replace(client: Option<Client>, backend: String) {
     global::<Connection>().update(|s| {
         s.generation += 1;
         s.client = client;
+        s.backend = backend;
     });
 }
 
@@ -47,6 +49,7 @@ where
 #[derive(Clone)]
 pub(crate) struct Context {
     pub client: Client,
+    pub backend: String,
     generation: u64,
 }
 impl Context {
@@ -58,6 +61,7 @@ pub(crate) fn context() -> Option<Context> {
     let connection = global::<Connection>().get_untracked();
     Some(Context {
         client: connection.client?,
+        backend: connection.backend,
         generation: connection.generation,
     })
 }

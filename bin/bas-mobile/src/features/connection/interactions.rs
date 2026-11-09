@@ -6,7 +6,7 @@ use std::{future::Future, time::Duration};
 
 pub(crate) fn observe() {
     let s = state().get_untracked();
-    let (Some(client), Some(session)) = (s.client.clone(), s.session.clone()) else {
+    let (Some(client), Some(session)) = (s.backend.client(), s.session.clone()) else {
         return;
     };
     let mut permissions = client.clone();

@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.nio.charset.StandardCharsets;
+import android.system.Os;
 import org.json.JSONObject;
 
 final class RuntimeBundle {
@@ -13,6 +15,25 @@ final class RuntimeBundle {
     static File run(Context context) { return new File(base(context), "run"); }
     static File browser(Context context) { return new File(run(context), "browser"); }
     static File socket(Context context) { return new File(run(context), "service.sock"); }
+
+    static void identity(File root, File run) throws Exception {
+        int uid = Os.getuid();
+        int gid = Os.getgid();
+        accountFile(root, run, "passwd", uid, "bas:x:" + uid + ":" + gid + ":BAS:/home/bas:/bin/sh");
+        accountFile(root, run, "group", gid, "bas:x:" + gid + ":");
+    }
+
+    private static void accountFile(File root, File run, String name, int id, String entry) throws Exception {
+        var lines = Files.readAllLines(new File(root, "etc/" + name).toPath(), StandardCharsets.UTF_8);
+        lines.removeIf(line -> {
+            String[] fields = line.split(":");
+            return fields.length > 2 && (fields[0].equals("bas") || fields[2].equals(Integer.toString(id)));
+        });
+        lines.add(entry);
+        File target = new File(run, name);
+        Files.write(target.toPath(), lines, StandardCharsets.UTF_8);
+        Os.chmod(target.getPath(), 0600);
+    }
 
     static boolean available(Context context) {
         try (var input = context.getAssets().open("bas-runtime/manifest.json")) { return true; }

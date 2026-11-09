@@ -633,7 +633,7 @@ fn android_acp_controls_permissions_forms_and_server_settings() {
     app.wait_for_within("text:/Connected/", DEADLINE)
         .expect("handshake result");
     let registrations = runtime.block_on(async {
-        Client::connect(endpoint)
+        Client::connect(endpoint.clone())
             .await
             .expect("client")
             .get_agent_configuration(pb::GetAgentConfigurationRequest {})
@@ -654,5 +654,55 @@ fn android_acp_controls_permissions_forms_and_server_settings() {
     );
     fs::write(root.join("settings.txt"), app.screen().texts().join("\n"))
         .expect("settings artifact");
+    app.press("label:Back").expect("agents");
+    app.press("label:Back").expect("settings");
+    app.press("label:Back").expect("conversation");
+    app.clear("label:Message your agent…").expect("clear draft");
+    app.type_text("label:Message your agent…", "/stop refusal")
+        .expect("refusal response");
+    app.press("label:Send").expect("submit refusal turn");
+    app.wait_for_within("text:The agent refused to continue this turn.", DEADLINE)
+        .expect("successful RPC with refusal still explains the outcome");
+    app.type_text("label:Message your agent…", "/permission")
+        .expect("start a turn that waits for user input");
+    app.press("label:Send").expect("submit interrupted turn");
+    app.wait_for_within("label:Allow once", DEADLINE)
+        .expect("agent is running");
+    app.wait_for("text:Agent is working…")
+        .expect("visible execution status");
+    runtime.block_on(async {
+        let mut client = Client::connect(endpoint).await.expect("client");
+        let session = client
+            .list_sessions(pb::ListSessionsRequest {
+                include_archived: false,
+            })
+            .await
+            .expect("sessions")
+            .into_inner()
+            .sessions
+            .into_iter()
+            .find(|session| session.agent == "demo")
+            .expect("active demo session");
+        client
+            .close_session(pb::GetSessionRequest {
+                session: session.id,
+            })
+            .await
+            .expect("stop the real agent during its turn");
+    });
+    app.wait_for_within(
+        "text:The conversation was stopped before the reply completed.",
+        DEADLINE,
+    )
+    .expect("interrupted turn must explain why no reply arrived");
+    app.wait_for_gone("label:Cancel", DEADLINE)
+        .expect("interrupted turn no longer running");
+    app.wait_for_gone("id:prompt-progress", DEADLINE)
+        .expect("progress ends with interruption");
+    fs::write(
+        root.join("interrupted-turn.txt"),
+        app.screen().texts().join("\n"),
+    )
+    .expect("interruption artifact");
     fs::write(root.join("result.txt"), "PASS: real ACP model and boolean configuration, tool approval, form elicitation, keyboard expansion/collapse, draft preservation, long-press session actions, pin/bookmark filters, timestamp groups, turn rail and bookmarked turn navigation, attachment preview/reopen/back/delete, expanded content footer, Android system light/dark theme, section-based settings, revision-checked auto-save and custom agent registration\n").expect("result artifact");
 }

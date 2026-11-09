@@ -1,4 +1,5 @@
 mod app;
+mod entities;
 mod features;
 mod pages;
 mod shared;

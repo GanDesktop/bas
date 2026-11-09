@@ -60,9 +60,9 @@ pub(crate) fn picker() -> impl IntoElement {
                         .child(
                             text(|| {
                                 state().with(|s| {
-                                    if s.loading {
+                                    if s.backend.connecting() {
                                         tr!("loading")
-                                    } else if s.connected {
+                                    } else if s.backend.connected() {
                                         tr!("ready")
                                     } else {
                                         tr!("offline")

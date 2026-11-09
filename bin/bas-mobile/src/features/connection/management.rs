@@ -1,4 +1,4 @@
-use super::{current, fail, state, task};
+use super::{Creation, Execution, current, fail, state, task};
 use crate::shared::{api, i18n::tr};
 use bas_client::service::pb;
 
@@ -56,9 +56,6 @@ pub(crate) fn reload() {
                 s.agents = agents;
                 s.workspaces = workspaces;
                 s.sessions = sessions;
-                if !s.agents.iter().any(|a| Some(&a.id) == s.agent.as_ref()) {
-                    s.agent = s.agents.first().map(|a| a.id.clone());
-                }
                 if !s
                     .agents
                     .iter()
@@ -171,6 +168,17 @@ pub(crate) fn perform(action: Action, session: String) {
                             {
                                 s.selection += 1;
                                 s.session = None;
+                                s.submitted_turn = None;
+                                s.execution = Execution::Idle;
+                                s.creation = Creation::Idle;
+                                s.login_request = None;
+                                s.error.clear();
+                                s.overview.clear();
+                                s.terminals.clear();
+                                s.attachments.clear();
+                                s.usage = None;
+                                s.configuring = false;
+                                s.draft.clear();
                                 s.messages.clear();
                                 s.permissions.clear();
                                 s.elicitations.clear();

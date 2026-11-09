@@ -57,6 +57,8 @@ public final class LocalService extends Service {
             File temp = new File(getCacheDir(), "bas-proot");
             for (File dir : Arrays.asList(run, home, temp, new File(home, "workspace"))) Files.createDirectories(dir.toPath());
             Os.chmod(run.getPath(), 0700);
+            // PRoot preserves the app UID; libc and Node also need its passwd/group records.
+            RuntimeBundle.identity(root, run);
             File browser = RuntimeBundle.browser(this);
             RuntimeBundle.remove(browser);
             Files.createDirectories(browser.toPath());
@@ -71,7 +73,9 @@ public final class LocalService extends Service {
             List<String> command = new ArrayList<>(Arrays.asList("/system/bin/sh", "-c",
                     "echo $$ > proot.pid; exec \"$@\"", "bas-proot", libs + "/libproot.so",
                     "--link2symlink", "-r", root.getPath(), "-b", "/dev", "-b", "/proc",
-                    "-b", home + ":/home/bas", "-b", run + ":/run/bas", "-w", "/home/bas",
+                    "-b", home + ":/home/bas", "-b", run + ":/run/bas",
+                    "-b", new File(run, "passwd") + ":/etc/passwd",
+                    "-b", new File(run, "group") + ":/etc/group", "-w", "/home/bas",
                     "/usr/bin/env", "-i", "HOME=/home/bas", "USER=bas", "LOGNAME=bas",
                     "PATH=/opt/bas/bin:/usr/local/bin:/usr/bin:/bin", "TMPDIR=/tmp",
                     "BROWSER=/opt/bas/bin/bas-open-url", "BAS_BROWSER_DIRECTORY=/run/bas/browser",

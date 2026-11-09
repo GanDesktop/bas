@@ -67,14 +67,25 @@ impl NewSession {
                                     .into_element(),
                                 ))
                                 .content(Some(
-                                    text(move || agent.with(|a| a.id.clone()))
-                                        .text_size(ui::font_size)
+                                    view()
+                                        .gap_1()
+                                        .child(
+                                            text(move || agent.with(|a| a.id.clone()))
+                                                .text_size(ui::font_size),
+                                        )
+                                        .child(crate::widgets::agent::login_status(move || {
+                                            agent.with(|a| a.id.clone())
+                                        }))
                                         .into_element(),
                                 ))
                                 .render(),
                         )
                         .disabled(|| {
-                            state().with(|s| !s.connected || s.workspace.is_none() || s.loading)
+                            state().with(|s| {
+                                !s.backend.connected()
+                                    || s.workspace.is_none()
+                                    || s.creation.creating()
+                            })
                         })
                     },
                 )),

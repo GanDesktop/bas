@@ -119,11 +119,27 @@ nix develop --command cargo test -p bas-mobile
 
 端到端测试启动隔离的真实 BAS 后台和 acp-test-agent，以 NSH headless 的 Android 手机环境执行会话、后台切换、ACP 模型/布尔配置、权限与表单交互、工具结果展开、附件选择、自定义注册和会话策略保存。包括键盘环境变化、草稿保留、长按重命名、应用菜单边界和纵向设置导航。`/activity` 场景验证思考／工具合并、正文分界、失败状态及详情展开。后台日志、UI mount trace、会话文本和结果保存在 `target/mobile-e2e/`。可用 `BAS_TEST_DAEMON` 指定后台可执行文件。Headless 验证不替代 Android 真机键盘、手势与 APK 安装验收。
 
-ACP 登录使用独立页面：创建会话或实时对话返回结构化 `AuthRequired` 时自动打开，取消或返回后，对话保留「登录」入口。智能体详情也提供直接的「登录」按钮；「检查连接」结果只显示摘要和入口，不再内嵌授权表单。登录页展示智能体提供的登录方式、说明、表单／浏览器授权请求、进度和错误；取消会关闭本次鉴权流，重试使用新的请求。成功后回到原页面，必要时重试创建会话，但不自动重发提示。终端登录方式仍提示在后台主机完成，不在手机执行服务端命令。
+状态按职责分开，界面从状态派生显示，不再复用连接的 `loading` 或全局登录提示：
 
-`authentication` 端到端测试使用真实 BAS 和 `acp-test-agent --require-auth --interactive-auth --auth-state <临时路径>`，覆盖自动跳转、取消／拒绝／重试、表单校验、浏览器授权、登录过期、会话恢复及草稿保留。登录页文本和 UI trace 保存在 `target/mobile-e2e/authentication-*/`，不需要连接手机。
+| 状态 | 所属层与范围 | 变化依据 |
+| --- | --- | --- |
+| 后台连接 | `features/connection::Backend`，当前服务 | 未连接、连接中、已连接（含客户端及地址）、失败；新建会话和 Agent 登录不改变它 |
+| 新建会话 | `Creation`，指定智能体、工作区及请求代次 | 空闲、创建中、需要登录、失败；登录成功只续接仍有效的创建请求 |
+| 当前轮次 | `Execution`，当前会话 | 空闲、提交中、运行中、结果不确定；不能确定提交结果时阻止重复发送 |
+| 智能体就绪情况 | `entities/agent`，以后台地址和 Agent ID 为键 | 未知、需要登录、已就绪；由连接检查、创建会话、实时对话结果和退出登录更新 |
+| 授权交互 | `agent_management/auth::Flow`，一次授权流程 | 空闲、发现登录方式、可选择、鉴权中；鉴权中的表单、通道和复核阶段随流程一起结束 |
 
-代码按 `app → pages → widgets → features → shared` 分层，会话、智能体管理和会话策略各自组织业务；可复用布局 `ContentPage` 声明 `header / content / footer` 插槽，`ControlRow` 声明 `leading / content / trailing` 插槽，通过 `Default::default()` 创建。
+消息提交和智能体执行期间分别显示进度文案；轮次中断时显示后台提供的失败原因，或明确说明会话停止、服务重启、派发前取消。ACP 的拒绝、取消和额度限制等结束原因也会显示；CodeBuddy 在拒绝结果的 `codebuddy.ai/errorMessage` 中返回的错误会提取具体详情。新的轮次开始后清除上一轮错误。端到端测试通过真实 Agent 等待权限时关闭会话，验证中断原因可见且运行提示结束。
+
+会话输入区使用当前会话的智能体身份，新建会话选择保存在独立的草稿身份中。登录页、智能体详情与新建会话列表读取同一份就绪状态；其它智能体的登录失败不会阻塞当前会话。历史回放不覆盖现在的登录状态。更换后台、修改或移除智能体时清除相关缓存；「已就绪」表示最近确认可用，凭据过期仍以新的服务端结果为准。请求代次及会话选择代次阻止旧请求结果操作后来选择的会话。
+
+ACP 登录使用独立页面：创建会话或实时对话返回结构化 `AuthRequired` 时自动打开，取消或返回后，需要登录的当前智能体保留「登录」入口。智能体详情也提供直接的「登录」按钮；「检查连接」结果只显示摘要和入口，不再内嵌授权表单。登录页展示智能体提供的登录方式、说明、表单／浏览器授权请求、进度和错误；取消会关闭本次鉴权流，重试使用新的请求。成功后回到原页面，必要时重试创建会话，但不自动重发提示。终端登录方式仍提示在后台主机完成，不在手机执行服务端命令。
+
+从浏览器回到前台时，仍在等待的登录页会通过新的 ACP 连接检查会话是否就绪；等待期间也可以点击「检查登录状态」。确认能创建会话后结束旧鉴权流并显示「已登录」，尚未登录时保留原来的授权请求。打开浏览器本身不代表登录成功。
+
+`authentication` 端到端测试使用真实 BAS 和 `acp-test-agent --require-auth --interactive-auth --auth-state <临时路径>`，覆盖自动跳转、取消／拒绝／重试、表单校验、浏览器授权、登录过期、会话恢复及草稿保留，双智能体登录状态隔离与后台连接显示；另以独立 Agent 进程完成登录，验证原鉴权请求仍在等待时的前台状态复核。登录页文本和 UI trace 保存在 `target/mobile-e2e/authentication-*/`，不需要连接手机。
+
+代码按 `app → pages → widgets → features → entities → shared` 分层，会话、智能体管理和会话策略各自组织业务；可复用布局 `ContentPage` 声明 `header / content / footer` 插槽，`ControlRow` 声明 `leading / content / trailing` 插槽，通过 `Default::default()` 创建。
 
 配色使用暖灰／陶土色的明暗主题，沿用 NSH 的 `sidebar / card / accent / primary` 等语义 token，交互使用内置 hover、active、selected、disabled 状态。当前 NSH 没有公开的通用图标库；工具栏使用 Lucide SVG，经 NSH `Image` 加载并随主题着色。图标来源和许可证随资源保存在 `assets/icons/`。
 
@@ -169,7 +185,7 @@ Android 前台 Service 持有 BAS 进程与通知，界面关闭不主动停止�
 
 - `home/`：持久工作区、`daemon.json`、`sessions.sqlite3` 和 Agent 数据。
 - `versions/<sha256>/`：可替换的 Linux 用户态，不存用户工作区。
-- `run/service.sock`：本机连接端点，沿用 BAS 同 UID 的 Unix socket 认证；PRoot 不使用伪 root。
+- `run/service.sock`：本机连接端点，沿用 BAS 同 UID 的 Unix socket 认证；PRoot 不使用伪 root。每次启动按 Android 应用的实际 UID/GID 生成 `run/passwd`、`run/group` 并绑定至容器 `/etc/`，让 libc、Node 的用户查询得到 `bas` 与 `/home/bas`；保留基础系统账号，运行时版本目录不被修改。
 - `service.log`、`install.log`：服务与解压日志。
 
 本机构建使用单独的 [AndroidManifest.xml](android/AndroidManifest.xml)，`targetSdk=28`，用于私有目录执行 Linux 程序，面向 APK 侧载；现有远程客户端仍使用 NSH 默认 targetSdk。包目前使用 Android 开发签名。打包脚本复用 NSH 编译结果，加入运行环境、服务声明后重新对齐并签名，不修改 NSH 依赖源码。固定下载输入见 `scripts/mobile-runtime/inputs.json`。APK 中附带运行时来源、校验信息与许可证。
@@ -179,6 +195,10 @@ Android 前台 Service 持有 BAS 进程与通知，界面关闭不主动停止�
 本次已在 Android 15 / API 35 的 x86_64 模拟器验证：APK 首次解压、应用 UID 下运行 BAS/PRoot、客户端通过私有 socket 连接、ACP 测试 Agent 流式回显、退到桌面后 RPC 可用、SIGTERM 停止、重启后恢复同一会话历史。验证截图、服务日志和重启前后会话 ID 保存在 `target/mobile-emulator/`。Android 16 的 V2536A ARM64 真机已验证安装、启动、连接及测试 Agent 进程创建。补齐 `libatomic1` 后，使用 QEMU 用户态执行官方 ARM64 Node 26.13.0 和 npm 11.20.0 的版本命令通过，记录在 `target/mobile-runtime/verification/`；这不替代真机 Agent 安装与模型调用验收。各厂商长期后台行为尚未验证。
 
 模拟器环境可用 `nix develop .#android-emulator`，内含 API 35 的 Google APIs x86_64 镜像和 emulator。验证请创建独立 AVD 并指定独立端口，再使用 `adb -s <serial>` 安装 `target/mobile-local/x86_64/BAS.apk`，避免覆盖其他测试设备。按上述入口启动并连接，新建 `acp-test-agent` 会话、发送任意文字，然后测试退到桌面和停止/重启后的历史恢复。此流程不需要转发电脑服务端口。
+
+### 容器用户信息验证
+
+V2536A Android 16 真机上，修复前 Node `os.userInfo()` 报 `uv_os_get_passwd returned ENOENT`，WorkBuddy 两次发送均以带内部错误的 `refusal` 结束。绑定实际应用 UID/GID 的账号文件后，同一 Node 返回 `username=bas`、`homedir=/home/bas`，用户已确认 WorkBuddy 实际回复恢复。移动端也会显示这类拒绝结果中的错误详情。脱敏检查记录与截图保存在 `target/android-prompt-verification/`；原始会话数据库仅作为本地诊断工件，不纳入版本控制。
 
 ### Linux 程序打开手机浏览器
 

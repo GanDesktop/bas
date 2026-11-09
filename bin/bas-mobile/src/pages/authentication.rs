@@ -19,22 +19,22 @@ pub(crate) fn render() -> impl IntoElement {
     let content = scroll().flex_1().child(el! { .view { test_id: "authentication-page"; p_4; gap_4 } [
         .view { gap_2 } [
             $(ui::icon(ui::SHIELD)),
-            $(text(|| auth::state().with(|s| s.entry.as_ref().map(|e| e.name.clone()).unwrap_or_else(|| s.agent.clone())))) { text_lg; font_weight: FontWeight::SEMIBOLD },
-            $(text(|| connection::profiles::name(&connection::state().get_untracked().endpoint))) { text_sm; text_color: $move || theme().muted_foreground },
+            $(text(|| auth::state().with(|s| s.entry.as_ref().map(|e| e.name.clone()).unwrap_or_else(|| s.key.agent.clone())))) { text_lg; font_weight: FontWeight::SEMIBOLD },
+            $(text(|| auth::state().with(|s| connection::profiles::name(&s.key.backend)))) { text_sm; text_color: $move || theme().muted_foreground },
             $(text(tr!("auth-page-help"))) { text_size: ui::font_size; text_color: $move || theme().muted_foreground },
         ],
-        $(when(|| auth::state().with(|s| s.loading), || text(tr!("auth-loading")))),
+        $(when(|| auth::state().with(|s| s.loading()), || text(tr!("auth-loading")))),
         $(when(|| auth::state().with(|s| !s.message.is_empty()), || text(|| auth::state().with(|s| s.message.clone())).text_size(ui::font_size))),
         $(when(|| auth::state().with(|s| !s.error.is_empty()), || text(|| auth::state().with(|s| s.error.clone())).text_size(ui::font_size).text_color(|| theme().destructive))),
-        $(when(|| auth::state().with(|s| !s.loading && !s.running) && !auth::connected(), methods)),
+        $(when(|| auth::state().with(|s| !s.loading() && !s.running()) && !auth::connected(), methods)),
         $(crate::widgets::browser_requests::inline()),
-        $(each(|| auth::state().with(|s| s.pending.clone()), |p| p.request_id.clone(), |pending, _| {
+        $(each(|| auth::state().with(|s| s.pending().to_vec()), |p| p.request_id.clone(), |pending, _| {
             dynamic(move || form(pending.get()))
         })),
     ] });
     let footer = el! { .view { p_4; gap_2; border_t_1; border_color: $move || theme().border } [
-        $(when(|| auth::state().with(|s| s.running), || ui::labeled_action(ui::STOP, tr!("auth-cancel"), auth::stop))),
-        $(when(|| auth::state().with(|s| !s.loading && !s.running) && !auth::connected(), || ui::labeled_action(ui::REFRESH, tr!("auth-recheck"), auth::reload))),
+        $(when(|| auth::state().with(|s| s.running()), || ui::labeled_action(ui::STOP, tr!("auth-cancel"), auth::stop))),
+        $(when(|| auth::state().with(|s| !s.loading()) && !auth::connected(), || ui::labeled_action(ui::REFRESH, tr!("auth-recheck"), auth::recheck).disabled(|| auth::state().with(|s| s.checking())))),
         $(when(auth::connected, || ui::labeled_action(ui::BACK, tr!("auth-done"), routes::back))),
     ] };
     ContentPage::default()

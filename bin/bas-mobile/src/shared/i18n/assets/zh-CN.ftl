@@ -227,6 +227,17 @@ auth-stream-ended = 登录在确认成功前中断，请重试。
 auth-cancel = 取消登录
 auth-cancelled = 已取消登录，可重新选择登录方式。
 auth-recheck = 检查登录状态
+creating-session = 正在创建会话…
+prompt-submitting = 正在提交消息…
+prompt-running = 智能体正在处理…
+turn-session-stopped = 会话已停止，回复未完成。
+turn-refused = 智能体拒绝继续本轮对话。
+turn-limit-reached = 本轮已达到智能体的执行限制，回复停止。
+turn-cancelled = 回复已取消。
+turn-ended = 智能体已结束本轮对话。
+turn-service-restarted = BAS 服务已重启，回复未完成。请发送新消息继续。
+turn-cancelled-before-dispatch = 消息在交给智能体之前已取消。
+missing-session = 服务未返回会话。
 auth-done = 完成
 
 browser-request-title = 本机智能体请求打开网页

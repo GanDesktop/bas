@@ -1,4 +1,7 @@
-use crate::shared::{api, i18n::tr, routes};
+use crate::{
+    entities::agent::{Key, LoginStatus},
+    shared::{api, i18n::tr, routes},
+};
 use bas_client::{
     authentication::{self, Execution, Method, elicitation},
     management::{Catalog, Entry},
@@ -9,43 +12,100 @@ use std::time::Duration;
 
 #[derive(Clone, Default)]
 pub(crate) struct State {
-    pub agent: String,
+    pub key: Key,
     pub entry: Option<Entry>,
-    pub check: Option<pb::CheckAgentResponse>,
     pub methods: Vec<Method>,
-    pub loading: bool,
-    pub running: bool,
-    pub pending: Vec<pb::PendingElicitation>,
     pub message: String,
     pub error: String,
-    tx: Option<tokio::sync::mpsc::Sender<pb::AuthenticationInput>>,
+    flow: Flow,
     epoch: u64,
+}
+
+#[derive(Clone, Default)]
+enum Flow {
+    #[default]
+    Idle,
+    Discovering,
+    Ready,
+    Authenticating {
+        tx: tokio::sync::mpsc::Sender<pb::AuthenticationInput>,
+        pending: Vec<pb::PendingElicitation>,
+        verification: Verification,
+    },
+}
+
+#[derive(Clone)]
+enum Verification {
+    Idle,
+    Checking,
+}
+
+impl State {
+    pub fn loading(&self) -> bool {
+        matches!(self.flow, Flow::Discovering)
+    }
+    pub fn running(&self) -> bool {
+        matches!(self.flow, Flow::Authenticating { .. })
+    }
+    pub fn checking(&self) -> bool {
+        matches!(
+            self.flow,
+            Flow::Authenticating {
+                verification: Verification::Checking,
+                ..
+            }
+        )
+    }
+    pub fn pending(&self) -> &[pb::PendingElicitation] {
+        match &self.flow {
+            Flow::Authenticating { pending, .. } => pending,
+            _ => &[],
+        }
+    }
+    fn pending_mut(&mut self) -> Option<&mut Vec<pb::PendingElicitation>> {
+        match &mut self.flow {
+            Flow::Authenticating { pending, .. } => Some(pending),
+            _ => None,
+        }
+    }
+    fn sender(&self) -> Option<tokio::sync::mpsc::Sender<pb::AuthenticationInput>> {
+        match &self.flow {
+            Flow::Authenticating { tx, .. } => Some(tx.clone()),
+            _ => None,
+        }
+    }
+    fn verify(&mut self, next: Verification) {
+        if let Flow::Authenticating { verification, .. } = &mut self.flow {
+            *verification = next;
+        }
+    }
 }
 pub(crate) fn state() -> Signal<State> {
     global::<State>()
 }
 
-pub(crate) fn open(entry: Entry, check: Option<pb::CheckAgentResponse>) {
-    open_inner(entry.id.clone(), Some(entry), check);
+pub(crate) fn open(entry: Entry) {
+    open_inner(entry.id.clone(), Some(entry));
 }
 pub(crate) fn open_agent(agent: String) {
-    open_inner(agent, None, None);
+    open_inner(agent, None);
 }
 
-fn open_inner(agent: String, entry: Option<Entry>, check: Option<pb::CheckAgentResponse>) {
+fn open_inner(agent: String, entry: Option<Entry>) {
     let epoch = state().get_untracked().epoch + 1;
     state().set(State {
-        agent,
+        key: Key::new(
+            api::context()
+                .map(|context| context.backend)
+                .unwrap_or_default(),
+            agent,
+        ),
         entry,
         epoch,
         ..Default::default()
     });
     routes::authentication();
-    if let Some(check) = check {
-        apply_check(check);
-    } else {
-        reload();
-    }
+    reload();
 }
 
 pub(crate) fn reload() {
@@ -55,7 +115,7 @@ pub(crate) fn reload() {
         return;
     };
     state().update(|s| {
-        s.loading = true;
+        s.flow = Flow::Discovering;
         s.error.clear();
         s.message.clear();
     });
@@ -73,7 +133,7 @@ pub(crate) fn reload() {
                     serde_json::from_slice::<Catalog>(&catalog.catalog_json)?
                         .entries
                         .into_iter()
-                        .find(|entry| entry.id == snapshot.agent)
+                        .find(|entry| entry.id == snapshot.key.agent)
                         .ok_or_else(|| anyhow::anyhow!(tr!("auth-agent-unavailable")))?
                 }
             };
@@ -95,13 +155,67 @@ pub(crate) fn reload() {
         if !context.current() || state().get_untracked().epoch != snapshot.epoch {
             return;
         }
-        state().update(|s| s.loading = false);
         match result {
             Ok(Ok((entry, check))) => {
                 state().update(|s| s.entry = Some(entry));
                 apply_check(check);
             }
-            Ok(Err(error)) => state().update(|s| s.error = error.to_string()),
+            Ok(Err(error)) => finish(error.to_string()),
+            Err(error) => finish(error.to_string()),
+        }
+    });
+}
+
+pub(crate) fn recheck() {
+    let snapshot = state().get_untracked();
+    if snapshot.loading() || snapshot.checking() {
+        return;
+    }
+    if !snapshot.running() {
+        reload();
+        return;
+    }
+    let Some(spec) = snapshot
+        .entry
+        .as_ref()
+        .and_then(|entry| entry.spec.as_ref())
+    else {
+        return;
+    };
+    let Some(context) = api::context() else {
+        return;
+    };
+    let request = pb::CheckAgentRequest {
+        agent: snapshot.key.agent,
+        expected_spec_json: serde_json::to_vec(spec).expect("agent spec serializes"),
+        connect: true,
+    };
+    state().update(|s| {
+        s.verify(Verification::Checking);
+        s.error.clear();
+    });
+    api::spawn_task(async move {
+        let mut client = context.client.clone();
+        let result = background(async move { client.check_agent(request).await }).await;
+        let current = state().get_untracked();
+        if !context.current() || current.epoch != snapshot.epoch || !current.running() {
+            return;
+        }
+        state().update(|s| s.verify(Verification::Idle));
+        match result {
+            Ok(Ok(response)) => {
+                let check = response.into_inner();
+                match check.status() {
+                    pb::AgentCheckStatus::Connected => {
+                        // Persisted credentials can be ready while authenticate is
+                        // still waiting. Retire that stream before publishing success.
+                        complete(check);
+                    }
+                    pb::AgentCheckStatus::AuthenticationRequired => {}
+                    _ => state().update(|s| s.error = check.message),
+                }
+            }
+            Ok(Err(error)) => state().update(|s| s.error = error.message().to_owned()),
             Err(error) => state().update(|s| s.error = error.to_string()),
         }
     });
@@ -122,36 +236,37 @@ fn apply_check(check: pb::CheckAgentResponse) {
             .transpose()?;
         Ok::<_, anyhow::Error>(authentication::methods(&initialized, error.as_ref())?)
     })();
-    state().update(|s| {
-        match methods {
-            Ok(methods) => s.methods = methods,
-            Err(error) => s.error = error.to_string(),
-        }
-        s.message = match check.status() {
-            pb::AgentCheckStatus::Connected => tr!("auth-complete"),
-            pb::AgentCheckStatus::AuthenticationRequired => tr!("auth-choose-method"),
-            _ => check.message.clone(),
-        };
-        s.check = Some(check);
+    batch(|| {
+        state().get_untracked().key.checked(&check);
+        state().update(|s| {
+            s.flow = Flow::Ready;
+            match methods {
+                Ok(methods) => s.methods = methods,
+                Err(error) => s.error = error.to_string(),
+            }
+            s.message = match check.status() {
+                pb::AgentCheckStatus::Connected => tr!("auth-complete"),
+                pb::AgentCheckStatus::AuthenticationRequired => tr!("auth-choose-method"),
+                _ => check.message.clone(),
+            };
+        });
+    });
+}
+
+fn complete(check: pb::CheckAgentResponse) {
+    batch(|| {
+        cancel();
+        apply_check(check);
     });
 }
 
 pub(crate) fn connected() -> bool {
-    state().with(|s| {
-        !s.loading
-            && !s.running
-            && s.check
-                .as_ref()
-                .is_some_and(|c| c.status() == pb::AgentCheckStatus::Connected)
-    })
+    state().with(|s| matches!(s.flow, Flow::Ready) && s.key.status() == LoginStatus::Ready)
 }
 pub(crate) fn cancel() {
     state().update(|s| {
         s.epoch += 1;
-        s.loading = false;
-        s.running = false;
-        s.pending.clear();
-        s.tx = None;
+        s.flow = Flow::Idle;
     });
 }
 pub(crate) fn stop() {
@@ -161,7 +276,7 @@ pub(crate) fn stop() {
 
 pub(crate) fn start(method: Method) {
     let snapshot = state().get_untracked();
-    if snapshot.running || snapshot.loading || !snapshot.methods.contains(&method) {
+    if snapshot.running() || snapshot.loading() || !snapshot.methods.contains(&method) {
         return;
     }
     match method.execution {
@@ -193,8 +308,11 @@ pub(crate) fn start(method: Method) {
     })
     .expect("new authentication channel has capacity");
     state().update(|s| {
-        s.tx = Some(tx);
-        s.running = true;
+        s.flow = Flow::Authenticating {
+            tx,
+            pending: Vec::new(),
+            verification: Verification::Idle,
+        };
         s.error.clear();
         s.message = tr!("awaiting-auth");
     });
@@ -213,11 +331,11 @@ pub(crate) fn start(method: Method) {
         let mut stream = match result {
             Ok(Ok(response)) => response.into_inner(),
             Ok(Err(error)) => {
-                finish(Some(error.message().to_owned()));
+                finish(error.message().to_owned());
                 return;
             }
             Err(error) => {
-                finish(Some(error.to_string()));
+                finish(error.to_string());
                 return;
             }
         };
@@ -240,41 +358,46 @@ pub(crate) fn start(method: Method) {
                     continue;
                 }
                 Ok((_, Ok(Ok(None)))) => {
-                    finish(Some(tr!("auth-stream-ended")));
+                    finish(tr!("auth-stream-ended"));
                     return;
                 }
                 Ok((_, Ok(Err(error)))) => {
-                    finish(Some(error.message().to_owned()));
+                    finish(error.message().to_owned());
                     return;
                 }
                 Err(error) => {
-                    finish(Some(error.to_string()));
+                    finish(error.to_string());
                     return;
                 }
             };
             match event.kind {
                 Some(pb::authentication_event::Kind::Check(check)) => {
                     // Publish completion after the final check, not after a form response.
-                    apply_check(check);
-                    finish(None);
+                    complete(check);
                     return;
                 }
                 Some(pb::authentication_event::Kind::Elicitation(pending)) => state().update(|s| {
-                    s.pending.retain(|p| p.request_id != pending.request_id);
-                    s.pending.push(pending);
+                    if let Some(requests) = s.pending_mut() {
+                        requests.retain(|p| p.request_id != pending.request_id);
+                        requests.push(pending);
+                    }
                 }),
                 Some(pb::authentication_event::Kind::ElicitationCancelled(id)) => {
-                    state().update(|s| s.pending.retain(|p| p.request_id != id));
+                    state().update(|s| {
+                        if let Some(pending) = s.pending_mut() {
+                            pending.retain(|p| p.request_id != id);
+                        }
+                    });
                 }
                 Some(pb::authentication_event::Kind::ElicitationComplete(payload)) => {
                     if let Ok(value) = payload.decode::<serde_json::Value>() {
-                        state().update(|s| s.pending.retain(|p| {
+                        state().update(|s| { if let Some(pending) = s.pending_mut() { pending.retain(|p| {
                             !request(p).is_ok_and(|r| matches!(r.mode, elicitation::Mode::Url(url) if value.get("elicitationId").and_then(|v| v.as_str()) == Some(url.elicitation_id.as_str())))
-                        }));
+                        }); } });
                     }
                 }
                 Some(pb::authentication_event::Kind::Terminal(_)) => {
-                    finish(Some(tr!("terminal-auth-required")));
+                    finish(tr!("terminal-auth-required"));
                     return;
                 }
                 Some(pb::authentication_event::Kind::Progress(message)) => {
@@ -286,15 +409,11 @@ pub(crate) fn start(method: Method) {
     });
 }
 
-fn finish(error: Option<String>) {
+fn finish(error: String) {
     state().update(|s| {
-        s.running = false;
-        s.tx = None;
-        s.pending.clear();
-        if let Some(error) = error {
-            s.error = error;
-            s.message.clear();
-        }
+        s.flow = Flow::Idle;
+        s.error = error;
+        s.message.clear();
     });
 }
 
@@ -314,13 +433,13 @@ pub(crate) fn request(pending: &pb::PendingElicitation) -> anyhow::Result<elicit
 pub(crate) fn answer(pending: pb::PendingElicitation, value: serde_json::Value) {
     let snapshot = state().get_untracked();
     if !snapshot
-        .pending
+        .pending()
         .iter()
         .any(|p| p.request_id == pending.request_id && !p.answered)
     {
         return;
     }
-    let Some(tx) = snapshot.tx else { return };
+    let Some(tx) = snapshot.sender() else { return };
     let retain = value.get("action").and_then(|v| v.as_str()) == Some("accept")
         && request(&pending).is_ok_and(|r| matches!(r.mode, elicitation::Mode::Url(_)));
     api::spawn_task(async move {
@@ -342,15 +461,18 @@ pub(crate) fn answer(pending: pb::PendingElicitation, value: serde_json::Value) 
         }
         match result {
             Ok(()) => state().update(|s| {
+                let Some(requests) = s.pending_mut() else {
+                    return;
+                };
                 if retain {
-                    if let Some(p) = s.pending.iter_mut().find(|p| p.request_id == request_id) {
+                    if let Some(p) = requests.iter_mut().find(|p| p.request_id == request_id) {
                         p.answered = true;
                     }
                 } else {
-                    s.pending.retain(|p| p.request_id != request_id);
+                    requests.retain(|p| p.request_id != request_id);
                 }
             }),
-            Err(_) => finish(Some(tr!("auth-stream-ended"))),
+            Err(_) => finish(tr!("auth-stream-ended")),
         }
     });
 }

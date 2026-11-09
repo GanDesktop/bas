@@ -1,6 +1,9 @@
 pub(crate) mod auth;
 
-use crate::shared::{api, i18n::tr, routes};
+use crate::{
+    entities::agent::{Key, LoginStatus},
+    shared::{api, i18n::tr, routes},
+};
 use bas_client::{
     config::{AgentRegistration, AgentSpec, agent::Command},
     management::{Catalog, Entry},
@@ -156,6 +159,18 @@ pub(crate) fn save() {
     let Some(config) = s.configuration else {
         return;
     };
+    let changed = api::context()
+        .map(|context| {
+            [
+                Some(s.editor.id.trim().to_owned()),
+                s.editor.original.clone(),
+            ]
+            .into_iter()
+            .flatten()
+            .map(|agent| Key::new(context.backend.clone(), agent))
+            .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let request = (|| {
         let e = s.editor;
         let mut registrations: Vec<AgentRegistration> =
@@ -207,8 +222,11 @@ pub(crate) fn save() {
             client.save_agent_configuration(request).await?;
             Ok(())
         },
-        |result| match result {
+        move |result| match result {
             Ok(()) => {
+                for key in changed {
+                    key.invalidate();
+                }
                 routes::agents();
                 load(false);
             }
@@ -235,6 +253,7 @@ pub(crate) fn install(entry: Entry) {
         return;
     }
     busy(tr!("installing"));
+    let key = api::context().map(|context| Key::new(context.backend, &entry.id));
     api::run(
         move |mut client| async move {
             let mut stream = client
@@ -248,8 +267,13 @@ pub(crate) fn install(entry: Entry) {
             }
             anyhow::bail!(tr!("incomplete-install"))
         },
-        |result| match result {
-            Ok(()) => load(false),
+        move |result| match result {
+            Ok(()) => {
+                if let Some(key) = key {
+                    key.invalidate();
+                }
+                load(false);
+            }
             Err(e) => failure(e),
         },
     );
@@ -264,6 +288,7 @@ pub(crate) fn confirm_remove() {
     };
     state().update(|s| s.pending_remove = None);
     busy(tr!("removing"));
+    let key = api::context().map(|context| Key::new(context.backend, &entry.id));
     api::run(
         move |mut client| async move {
             client
@@ -271,8 +296,13 @@ pub(crate) fn confirm_remove() {
                 .await?;
             Ok(())
         },
-        |result| match result {
-            Ok(()) => load(false),
+        move |result| match result {
+            Ok(()) => {
+                if let Some(key) = key {
+                    key.invalidate();
+                }
+                load(false);
+            }
             Err(e) => failure(e),
         },
     );
@@ -286,6 +316,7 @@ pub(crate) fn check(entry: Entry) {
     }
     busy(tr!("checking"));
     let id = entry.id.clone();
+    let key = api::context().map(|context| Key::new(context.backend, &id));
     api::run(
         move |mut client| async move {
             Ok(client
@@ -298,16 +329,22 @@ pub(crate) fn check(entry: Entry) {
                 .into_inner())
         },
         move |result| match result {
-            Ok(check) => state().update(|s| {
-                s.busy = false;
-                s.message.clear();
-                s.check = Some((entry, check));
-            }),
+            Ok(check) => {
+                if let Some(key) = key {
+                    key.checked(&check);
+                }
+                state().update(|s| {
+                    s.busy = false;
+                    s.message.clear();
+                    s.check = Some((entry, check));
+                });
+            }
             Err(e) => failure(e),
         },
     );
 }
 pub(crate) fn logout(entry: Entry) {
+    let key = api::context().map(|context| Key::new(context.backend, &entry.id));
     let Some(spec) = entry.spec else {
         return;
     };
@@ -325,8 +362,11 @@ pub(crate) fn logout(entry: Entry) {
                 .await?;
             Ok(())
         },
-        |result| match result {
+        move |result| match result {
             Ok(()) => {
+                if let Some(key) = key {
+                    key.record(LoginStatus::Required);
+                }
                 load(false);
             }
             Err(e) => failure(e),

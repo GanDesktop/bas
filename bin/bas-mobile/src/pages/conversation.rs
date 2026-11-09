@@ -23,8 +23,8 @@ use nsh_core::prelude::*;
 const DRAWER_WIDTH: f32 = 320.0;
 pub(crate) fn render() -> impl IntoElement {
     el! { .view { flex_1; pt_safe_area; px_safe_area; mb_keyboard; bg: $move || theme().background.opacity(preferences::state().with(|p|p.background_opacity/100.0)); text_color: $move || theme().foreground } [
-        $(when(|| state().with(|s| s.connected), connected)),
-        $(when(|| state().with(|s| !s.connected), welcome)),
+        $(when(|| state().with(|s| s.backend.connected()), connected)),
+        $(when(|| state().with(|s| !s.backend.connected()), welcome)),
     ] }
 }
 fn welcome() -> impl IntoElement {
@@ -57,7 +57,13 @@ fn connected() -> impl IntoElement {
     provide_context(navigation);
     let page = ContentPage::default()
         .header(Some(header().into_element()))
-        .content(Some(transcript().into_element()))
+        .content(Some(
+            view()
+                .flex_1()
+                .child(creation_feedback())
+                .child(transcript())
+                .into_element(),
+        ))
         .footer(Some(composer::render().into_element()));
     el! { .view { flex_1 } [
         $(page.render()),
@@ -71,6 +77,35 @@ fn connected() -> impl IntoElement {
             ],
         ],
     ] }
+}
+fn creation_feedback() -> impl IntoElement {
+    when(
+        || {
+            state().with(|s| {
+                matches!(
+                    s.creation,
+                    model::Creation::Creating(_) | model::Creation::Failed { .. }
+                )
+            })
+        },
+        || {
+            text(|| {
+                state().with(|s| match &s.creation {
+                    model::Creation::Creating(request) => {
+                        format!("{} · {}", request.agent, tr!("creating-session"))
+                    }
+                    model::Creation::Failed { request, error } => {
+                        format!("{} · {}", request.agent, error)
+                    }
+                    _ => String::new(),
+                })
+            })
+            .test_id("session-creation-status")
+            .px_3()
+            .py_2()
+            .text_sm()
+        },
+    )
 }
 fn drawer_changed(event: &SheetEvent) {
     if let SheetEvent::OpenChange(open, _) = event {

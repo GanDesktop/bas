@@ -92,7 +92,11 @@ fn saved(address: Signal<String>, name: Signal<String>) -> impl IntoElement {
                         ))
                         .trailing(Some(
                             when(
-                                move || state().with(|s| s.endpoint == entry.get() && s.connected),
+                                move || {
+                                    state().with(|s| {
+                                        s.backend.endpoint() == Some(entry.get().as_str())
+                                    })
+                                },
                                 || {
                                     text(tr!("ready"))
                                         .text_xs()
@@ -141,7 +145,7 @@ fn actions(address: Signal<String>, name: Signal<String>) -> impl IntoElement {
         $(ui::labeled_action(ui::SAVE, tr!("save"), save).disabled(empty)),
         $(ui::labeled_action(ui::LOGIN, tr!("connect"), connect)
             .bg(|| theme().accent)
-            .disabled(move || empty() || state().with(|s| s.loading))),
+            .disabled(move || empty() || state().with(|s| s.backend.connecting()))),
     ] }
 }
 
@@ -150,10 +154,10 @@ fn feedback(address: &str) -> String {
     let connection = state().with(|s| {
         if s.endpoint.trim() != address {
             String::new()
-        } else if s.loading {
+        } else if s.backend.connecting() {
             tr!("loading")
         } else {
-            s.error.clone()
+            s.backend.error().to_owned()
         }
     });
     if !connection.is_empty() {

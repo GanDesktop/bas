@@ -227,6 +227,17 @@ auth-stream-ended = Sign-in ended before confirmation. Please try again.
 auth-cancel = Cancel sign in
 auth-cancelled = Sign-in cancelled. You can choose a method to try again.
 auth-recheck = Check sign-in status
+creating-session = Creating conversation…
+missing-session = The service did not return a conversation.
+prompt-submitting = Submitting message…
+prompt-running = Agent is working…
+turn-session-stopped = The conversation was stopped before the reply completed.
+turn-refused = The agent refused to continue this turn.
+turn-limit-reached = The agent stopped because this turn reached its limit.
+turn-cancelled = Reply cancelled.
+turn-ended = The agent ended this turn.
+turn-service-restarted = BAS restarted before the reply completed. Send a new message to continue.
+turn-cancelled-before-dispatch = The message was cancelled before it reached the agent.
 auth-done = Done
 
 browser-request-title = Open a page from the local agent
