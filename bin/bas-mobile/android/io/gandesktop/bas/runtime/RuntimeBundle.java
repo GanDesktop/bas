@@ -11,6 +11,7 @@ import org.json.JSONObject;
 final class RuntimeBundle {
     static File base(Context context) { return new File(context.getFilesDir(), "bas-runtime"); }
     static File run(Context context) { return new File(base(context), "run"); }
+    static File browser(Context context) { return new File(run(context), "browser"); }
     static File socket(Context context) { return new File(run(context), "service.sock"); }
 
     static boolean available(Context context) {
@@ -67,7 +68,7 @@ final class RuntimeBundle {
         return output.toByteArray();
     }
 
-    private static void remove(File path) throws IOException {
+    static void remove(File path) throws IOException {
         if (Files.isSymbolicLink(path.toPath())) { Files.delete(path.toPath()); return; }
         if (path.isDirectory()) {
             File[] children = path.listFiles();

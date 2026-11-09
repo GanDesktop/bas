@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+bas-browser-bridge = { path = "../../crates/browser-bridge" }
 bas-client.workspace = true
 nsh-core = { git = "https://github.com/longbridge/nsh", rev = "f81b965f69096f871ca21907f6fab6be32fd2d40" }
 nsh-base = { git = "https://github.com/longbridge/nsh", rev = "f81b965f69096f871ca21907f6fab6be32fd2d40", default-features = false, features = ["editor", "highlight", "term"] }

@@ -27,6 +27,7 @@ pub(crate) fn render() -> impl IntoElement {
         $(when(|| auth::state().with(|s| !s.message.is_empty()), || text(|| auth::state().with(|s| s.message.clone())).text_size(ui::font_size))),
         $(when(|| auth::state().with(|s| !s.error.is_empty()), || text(|| auth::state().with(|s| s.error.clone())).text_size(ui::font_size).text_color(|| theme().destructive))),
         $(when(|| auth::state().with(|s| !s.loading && !s.running) && !auth::connected(), methods)),
+        $(crate::widgets::browser_requests::inline()),
         $(each(|| auth::state().with(|s| s.pending.clone()), |p| p.request_id.clone(), |pending, _| {
             dynamic(move || form(pending.get()))
         })),

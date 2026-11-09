@@ -228,3 +228,9 @@ auth-cancel = 取消登录
 auth-cancelled = 已取消登录，可重新选择登录方式。
 auth-recheck = 检查登录状态
 auth-done = 完成
+
+browser-request-title = 本机智能体请求打开网页
+browser-request-help = 手机上运行的智能体需要打开浏览器。请在浏览器完成登录，然后返回 BAS。
+browser-open = 打开浏览器
+browser-dismiss = 取消请求
+browser-open-failed = 无法打开浏览器，请检查是否已安装浏览器后重试。

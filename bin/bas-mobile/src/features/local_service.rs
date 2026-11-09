@@ -1,3 +1,5 @@
+pub(crate) mod browser;
+
 #[cfg(target_os = "android")]
 mod android;
 
@@ -11,6 +13,8 @@ pub(crate) struct Status {
     pub phase: String,
     pub error: String,
     pub endpoint: String,
+    #[serde(default)]
+    pub browser_directory: String,
 }
 
 #[derive(Clone, Default)]
@@ -71,21 +75,30 @@ pub(crate) async fn prepare(endpoint: String) -> anyhow::Result<()> {
 }
 
 fn command(action: &'static str) {
+    task(async move {
+        refresh(action).await;
+    });
+}
+
+fn task(future: impl std::future::Future<Output = ()> + 'static) {
     global::<Tasks>()
         .get_untracked()
         .owner
         .expect("runtime initialized")
         .run(|| {
-            spawn(async move {
-                refresh(action).await;
-            });
+            spawn(future);
         });
 }
 
 async fn refresh(action: &'static str) {
     let result = background(async move { call(action) }).await;
     match result {
-        Ok(Ok(value)) => status().set(value),
+        Ok(Ok(value)) => {
+            let directory = (value.phase == "running" && !value.browser_directory.is_empty())
+                .then(|| std::path::PathBuf::from(&value.browser_directory));
+            status().set(value);
+            browser::watch(directory);
+        }
         Ok(Err(error)) => status().update(|s| s.error = error.to_string()),
         Err(error) => status().update(|s| s.error = error.to_string()),
     }

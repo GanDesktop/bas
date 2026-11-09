@@ -228,3 +228,9 @@ auth-cancel = Cancel sign in
 auth-cancelled = Sign-in cancelled. You can choose a method to try again.
 auth-recheck = Check sign-in status
 auth-done = Done
+
+browser-request-title = Open a page from the local agent
+browser-request-help = The agent running on this phone wants to open your browser. Complete sign-in there, then return to BAS.
+browser-open = Open browser
+browser-dismiss = Dismiss request
+browser-open-failed = Could not open the browser. Check that a browser is installed, then try again.

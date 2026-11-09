@@ -27,6 +27,7 @@ public final class RuntimeBridge {
         JSONObject status = new JSONObject();
         status.put("available", RuntimeBundle.available(context));
         status.put("phase", LocalService.phase);
+        status.put("browser_directory", RuntimeBundle.browser(context).getAbsolutePath());
         status.put("error", LocalService.error);
         status.put("endpoint", "unix://" + RuntimeBundle.socket(context).getAbsolutePath());
         return status.toString();

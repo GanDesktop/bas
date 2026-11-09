@@ -57,6 +57,10 @@ public final class LocalService extends Service {
             File temp = new File(getCacheDir(), "bas-proot");
             for (File dir : Arrays.asList(run, home, temp, new File(home, "workspace"))) Files.createDirectories(dir.toPath());
             Os.chmod(run.getPath(), 0700);
+            File browser = RuntimeBundle.browser(this);
+            RuntimeBundle.remove(browser);
+            Files.createDirectories(browser.toPath());
+            Os.chmod(browser.getPath(), 0700);
             Files.deleteIfExists(RuntimeBundle.socket(this).toPath());
             Files.deleteIfExists(new File(run, "daemon.pid").toPath());
             Files.deleteIfExists(new File(run, "proot.pid").toPath());
@@ -70,6 +74,7 @@ public final class LocalService extends Service {
                     "-b", home + ":/home/bas", "-b", run + ":/run/bas", "-w", "/home/bas",
                     "/usr/bin/env", "-i", "HOME=/home/bas", "USER=bas", "LOGNAME=bas",
                     "PATH=/opt/bas/bin:/usr/local/bin:/usr/bin:/bin", "TMPDIR=/tmp",
+                    "BROWSER=/opt/bas/bin/bas-open-url", "BAS_BROWSER_DIRECTORY=/run/bas/browser",
                     "XDG_CONFIG_HOME=/home/bas/.config", "XDG_STATE_HOME=/home/bas/.local/state",
                     "XDG_DATA_HOME=/home/bas/.local/share", "LANG=C.UTF-8",
                     "/bin/sh", "-c", "echo $$ > /run/bas/daemon.pid; exec /opt/bas/bin/bas " +

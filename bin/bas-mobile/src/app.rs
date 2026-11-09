@@ -103,7 +103,7 @@ pub(crate) fn root() -> impl IntoElement {
             connection::authentication_completed(&agent);
         }
     });
-    nav_stack()
+    let navigation = nav_stack()
         .flex_1()
         .font_family(|| {
             theme()
@@ -153,5 +153,9 @@ pub(crate) fn root() -> impl IntoElement {
                             })),
                     )
             },
-        ))
+        ));
+    view()
+        .flex_1()
+        .child(navigation)
+        .child(crate::widgets::browser_requests::overlay())
 }

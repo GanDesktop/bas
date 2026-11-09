@@ -113,8 +113,8 @@ adb reverse tcp:0 tcp:50051
 
 ```sh
 nix develop --command cargo check -p bas-mobile
-nix develop --command cargo build -p bas -p acp-test-agent
-nix develop --command cargo test -p bas-mobile --test conversation --test authentication
+nix develop --command cargo build -p bas -p acp-test-agent -p bas-browser-bridge
+nix develop --command cargo test -p bas-mobile
 ```
 
 端到端测试启动隔离的真实 BAS 后台和 acp-test-agent，以 NSH headless 的 Android 手机环境执行会话、后台切换、ACP 模型/布尔配置、权限与表单交互、工具结果展开、附件选择、自定义注册和会话策略保存。包括键盘环境变化、草稿保留、长按重命名、应用菜单边界和纵向设置导航。`/activity` 场景验证思考／工具合并、正文分界、失败状态及详情展开。后台日志、UI mount trace、会话文本和结果保存在 `target/mobile-e2e/`。可用 `BAS_TEST_DAEMON` 指定后台可执行文件。Headless 验证不替代 Android 真机键盘、手势与 APK 安装验收。
@@ -179,3 +179,13 @@ Android 前台 Service 持有 BAS 进程与通知，界面关闭不主动停止�
 本次已在 Android 15 / API 35 的 x86_64 模拟器验证：APK 首次解压、应用 UID 下运行 BAS/PRoot、客户端通过私有 socket 连接、ACP 测试 Agent 流式回显、退到桌面后 RPC 可用、SIGTERM 停止、重启后恢复同一会话历史。验证截图、服务日志和重启前后会话 ID 保存在 `target/mobile-emulator/`。Android 16 的 V2536A ARM64 真机已验证安装、启动、连接及测试 Agent 进程创建。补齐 `libatomic1` 后，使用 QEMU 用户态执行官方 ARM64 Node 26.13.0 和 npm 11.20.0 的版本命令通过，记录在 `target/mobile-runtime/verification/`；这不替代真机 Agent 安装与模型调用验收。各厂商长期后台行为尚未验证。
 
 模拟器环境可用 `nix develop .#android-emulator`，内含 API 35 的 Google APIs x86_64 镜像和 emulator。验证请创建独立 AVD 并指定独立端口，再使用 `adb -s <serial>` 安装 `target/mobile-local/x86_64/BAS.apk`，避免覆盖其他测试设备。按上述入口启动并连接，新建 `acp-test-agent` 会话、发送任意文字，然后测试退到桌面和停止/重启后的历史恢复。此流程不需要转发电脑服务端口。
+
+### Linux 程序打开手机浏览器
+
+本机运行环境包含 `bas-open-url`，设置 `BROWSER=/opt/bas/bin/bas-open-url`，并将 `/usr/local/bin/xdg-open` 指向它。支持继承 `BROWSER` 的程序和通过 `PATH` 调用 `xdg-open` 的程序；无需在 Ubuntu 中安装桌面浏览器。
+
+助手将 HTTP(S) URL 原样写入应用私有的 `run/browser/`，app 显示目标域名和「打开浏览器／取消请求」。本机鉴权页内显示请求；其他页面使用独立底部面板。点击后使用 NSH 的 `open_url` 调用 Android `ACTION_VIEW`，成功交给系统才通知助手退出 0；取消退出 4，未配置桥接目录退出 3。打开失败会保留请求供重试。等待打开的时限为五分钟；退出 Agent、服务重启或请求过期后不再展示旧请求。服务后台运行时不会自行拉起浏览器，回到 app 后处理待办请求。
+
+运行环境通过绑定 `/run/bas` 共享目录。请求与响应使用随机 ID 和原子写入，私有目录为 0700；只接受 HTTP(S) URL，界面不显示 URL 中的 OAuth 参数，日志不记录完整链接。此桥接只负责交接网址，不承担 OAuth 回调或 token 交换。当前 PRoot 没有独立网络命名空间，使用本机回环地址的 Agent 回调仍由其监听进程处理；自定义回调 scheme、依赖桌面浏览器扩展或内置终端的登录方式需要另行适配。
+
+`make test-mobile` 会构建真实助手，验证 `$BROWSER`、`xdg-open` → 私有队列 → 手机界面 → 系统打开链接请求，以及取消、返回、进程结束和 URL 参数保留。工件在 `target/mobile-e2e/browser-bridge-*/`；无窗口测试不包含 Android 系统浏览器或真实第三方 OAuth 服务。

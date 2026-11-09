@@ -38,8 +38,8 @@ package-mobile:
 	nix develop .#android --command ./scripts/mobile-android package --abi arm64-v8a --out target/phone-test/apk
 
 test-mobile:
-	nix develop --command cargo build -p bas -p acp-test-agent
-	nix develop --command cargo test -p bas-mobile --test conversation
+	nix develop --command cargo build -p bas -p acp-test-agent -p bas-browser-bridge
+	nix develop --command cargo test -p bas-mobile
 
 package-mobile-local:
 	./scripts/package-mobile-local

@@ -385,6 +385,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "bas-browser-bridge"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "bas-client"
 version = "0.1.0"
 dependencies = [
@@ -414,6 +427,7 @@ name = "bas-mobile"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bas-browser-bridge",
  "bas-client",
  "base64 0.22.1",
  "chrono",

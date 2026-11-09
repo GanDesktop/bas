@@ -47,7 +47,7 @@ def main():
     args = parser.parse_args()
     spec = INPUTS[args.abi]
     target = spec['target']
-    subprocess.run(['cargo', 'zigbuild', '--locked', '-p', 'bas', '-p', 'acp-test-agent', '--release', '--target', target + '.2.35'], cwd=ROOT, check=True)
+    subprocess.run(['cargo', 'zigbuild', '--locked', '-p', 'bas', '-p', 'acp-test-agent', '-p', 'bas-browser-bridge', '--release', '--target', target + '.2.35'], cwd=ROOT, check=True)
     output = ROOT / 'target/mobile-runtime' / args.abi
     cache = ROOT / 'target/mobile-runtime/downloads'
     cache.mkdir(parents=True, exist_ok=True)
@@ -64,8 +64,10 @@ def main():
         extract_deb(fetch(package, cache), rootfs)
     binaries = rootfs / 'opt/bas/bin'
     binaries.mkdir(parents=True)
-    for name in ['bas', 'acp-test-agent']:
+    for name in ['bas', 'acp-test-agent', 'bas-open-url']:
         shutil.copy2(ROOT / 'target' / target / 'release' / name, binaries / name)
+    (rootfs / 'usr/local/bin').mkdir(parents=True, exist_ok=True)
+    (rootfs / 'usr/local/bin/xdg-open').symlink_to('/opt/bas/bin/bas-open-url')
     for name in ['home/bas', 'run/bas', 'tmp', 'dev', 'proc']:
         (rootfs / name).mkdir(parents=True, exist_ok=True)
     # DNS and CA roots must be usable without a Linux init system.
